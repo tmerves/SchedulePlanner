@@ -1,0 +1,21 @@
+# Python Environment Rules
+- Always use the active virtual environment (.venv) for installing packages and running code.
+- Run scripts using `.venv/bin/python` (macOS/Linux) or `.venv\Scripts\python.exe` (Windows).
+- When adding dependencies, install them via pip and update `requirements.txt` or `pyproject.toml`.
+- Follow PEP 8 standards and include type hints where appropriate.
+- Write unit tests using `pytest` inside the `tests/` directory if implementing a new feature
+
+# Software Engineering & Agent Protocol
+
+## Planning & Execution
+- Always inspect existing files and schemas before generating new code.
+- Write complete implementations. Never leave placeholder comments like "TODO", "implement later", or "...rest of file unchanged...".
+- Do not modify files or add dependencies outside the explicit scope of the current task.
+
+## Test-Driven Verification
+- Do not assume code works. If a phase involves a unit test run tests using `.venv\Scripts\python.exe -m pytest` after making changes that involve unit tests.
+- If a test fails:
+  1. Read the exact traceback and identify the line of failure.
+  2. Inspect the assumptions of the test vs. the implementation.
+  3. Formulate a hypothesis before modifying code.
+  4. Never edit a test just to force a passing status unless the test itself was fundamentally flawed.

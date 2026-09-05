@@ -1,0 +1,7 @@
+pydantic
+pytest
+beautifulsoup4
+httpx
+streamlit
+plotly
+pandas
