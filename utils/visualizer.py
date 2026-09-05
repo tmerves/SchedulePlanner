@@ -144,7 +144,8 @@ def create_schedule_calendar(
 
     for sec in schedule.sections:
         if not sec.meeting_times:
-            arranged_sections.append(f"{sec.course_id} (Sec {sec.section_id})")
+            loc_tag = f" [{sec.location}]" if getattr(sec, "location", None) and sec.location not in ("Arranged", "TBD") else ""
+            arranged_sections.append(f"{sec.course_id} (Sec {sec.section_id}){loc_tag}")
             continue
 
         for tb in sec.meeting_times:
@@ -217,17 +218,22 @@ def create_schedule_calendar(
         header = f"<b>{sec.course_id} - {sec.section_id}</b>"
         time_label = f"<span style='font-size:10px;'>{start_str} - {end_str}</span>"
 
+        loc_str = getattr(sec, "location", "").strip()
+        loc_line = f"<br><span style='font-size:9px; color:#334155;'>{loc_str}</span>" if loc_str else ""
+
         if duration_mins >= 80:
             instructor_display = sec.instructor if sec.instructor != "Arranged" else ""
-            inst_line = f"<br><span style='font-size:9px; color:#374151;'>{instructor_display}</span>" if instructor_display else ""
-            label = f"{header}<br>{time_label}{inst_line}"
+            inst_line = f"<br><span style='font-size:9px; color:#4B5563;'>{instructor_display}</span>" if instructor_display else ""
+            label = f"{header}<br>{time_label}{loc_line}{inst_line}"
         else:
-            label = f"{header}<br>{time_label}"
+            label = f"{header}<br>{time_label}{loc_line}"
 
+        loc_hover = f"<b>Location:</b> {loc_str}<br>" if loc_str else ""
         hover = (
             f"<b>{sec.course_id}</b><br>"
             f"<b>Section:</b> {sec.section_id}<br>"
             f"<b>Instructor:</b> {sec.instructor}<br>"
+            f"{loc_hover}"
             f"<b>Day:</b> {DAY_LABELS[day_idx]}<br>"
             f"<b>Time:</b> {start_str} – {end_str} ({duration_mins} min)"
         )

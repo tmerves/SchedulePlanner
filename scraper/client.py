@@ -144,6 +144,19 @@ class ScraperClient:
         
         return parse_courses(response.text, subject)
 
+    def fetch_multiple_courses(self, subjects: List[str], term: Optional[str] = None) -> List[Course]:
+        """
+        Dynamically fetches and aggregates courses across multiple academic subjects.
+        """
+        aggregated: List[Course] = []
+        for subject in subjects:
+            try:
+                courses = self.fetch_courses(subject=subject, term=term)
+                aggregated.extend(courses)
+            except Exception:
+                pass
+        return aggregated
+
     def __enter__(self):
         return self
 

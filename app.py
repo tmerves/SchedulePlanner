@@ -198,6 +198,7 @@ with tab_catalog:
                     sec_rows.append({
                         "Section": s.section_id,
                         "Instructor": s.instructor,
+                        "Location": s.location,
                         "Meeting Times": format_meeting_times(s.meeting_times),
                     })
                 if sec_rows:
@@ -233,7 +234,7 @@ with tab_filters:
                 st.markdown("---")
                 for s in course.sections:
                     is_active = s.section_id not in manager.excluded_section_ids
-                    chk_label = f"Section **{s.section_id}** | Instructor: {s.instructor} | Times: {format_meeting_times(s.meeting_times)}"
+                    chk_label = f"Section **{s.section_id}** | Instructor: {s.instructor} | Location: {s.location} | Times: {format_meeting_times(s.meeting_times)}"
                     new_val = st.checkbox(chk_label, value=is_active, key=f"sec_chk_{s.section_id}")
                     if new_val != is_active:
                         manager.toggle_section(s.section_id, is_active=new_val)
@@ -332,6 +333,7 @@ with tab_viewer:
                             "Course ID": s.course_id,
                             "Section": s.section_id,
                             "Instructor": s.instructor,
+                            "Location": s.location,
                             "Meeting Times": format_meeting_times(s.meeting_times),
                         })
                     st.dataframe(pd.DataFrame(details), hide_index=True, use_container_width=True)
@@ -381,6 +383,7 @@ with tab_saved:
                     "Course ID": s.course_id,
                     "Section": s.section_id,
                     "Instructor": s.instructor,
+                    "Location": s.location,
                     "Meeting Times": format_meeting_times(s.meeting_times),
                 })
             st.dataframe(pd.DataFrame(breakdown_rows), hide_index=True, use_container_width=True)

@@ -79,6 +79,35 @@ def parse_subjects(html_content: str) -> List[Dict[str, str]]:
             })
     return subjects
 
+def _parse_location_and_instructor(text: str) -> tuple[str, str]:
+    """
+    Splits the trailing meeting info text into location and instructor.
+    UAlbany instructor names typically format as 'Last,First' or 'Last,First Middle'.
+    """
+    text = text.strip()
+    if not text:
+        return "TBD", "Arranged"
+
+    tokens = text.split()
+    comma_idx = -1
+    for i, tok in enumerate(tokens):
+        if "," in tok:
+            comma_idx = i
+            break
+
+    if comma_idx != -1:
+        loc = " ".join(tokens[:comma_idx]).strip() or "TBD"
+        inst = " ".join(tokens[comma_idx:]).strip() or "Arranged"
+        return loc, inst
+
+    if len(tokens) == 1:
+        if tokens[0].lower() in ("online", "arranged", "remote", "tbd"):
+            return tokens[0], "Arranged"
+        return "TBD", tokens[0]
+
+    return " ".join(tokens[:-1]).strip() or "TBD", tokens[-1].strip() or "Arranged"
+
+
 def parse_courses(html_content: str, subject: str) -> List[Course]:
     """
     Parses search results HTML content and converts table rows (represented by key-value structures)
@@ -135,6 +164,7 @@ def parse_courses(html_content: str, subject: str) -> List[Course]:
         # Parse Meeting Info to get day/times, location, and instructor
         meeting_info = kvs.get("Meeting Info", "").strip()
         meeting_times = []
+        location = "TBD"
         instructor = "Arranged"
 
         if meeting_info:
@@ -150,11 +180,7 @@ def parse_courses(html_content: str, subject: str) -> List[Course]:
                 days_str = days_str.replace("TH", "R")
                 rest = meeting_info[end_idx:].strip()
 
-                if " " in rest:
-                    _, inst = rest.rsplit(" ", 1)
-                    instructor = inst.strip()
-                else:
-                    instructor = rest.strip() or "Arranged"
+                location, instructor = _parse_location_and_instructor(rest)
 
                 if days_str:
                     try:
@@ -163,17 +189,14 @@ def parse_courses(html_content: str, subject: str) -> List[Course]:
                     except Exception:
                         meeting_times = []
             else:
-                if " " in meeting_info:
-                    _, inst = meeting_info.rsplit(" ", 1)
-                    instructor = inst.strip()
-                else:
-                    instructor = meeting_info or "Arranged"
+                location, instructor = _parse_location_and_instructor(meeting_info)
 
         section_obj = Section(
             section_id=class_num,
             course_id=course_id,
             instructor=instructor or "Arranged",
-            meeting_times=meeting_times
+            meeting_times=meeting_times,
+            location=location or "TBD",
         )
 
         if course_id not in courses_dict:

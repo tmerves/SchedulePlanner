@@ -12,6 +12,7 @@ class Section(BaseModel):
     course_id: str
     instructor: str
     meeting_times: List[TimeBlock]
+    location: str = "TBD"
 
 class Course(BaseModel):
     course_id: str

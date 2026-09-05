@@ -247,7 +247,7 @@ def main():
                 for tb in section.meeting_times:
                     meeting_strs.append(f"{tb.day} {tb.start_time.strftime('%H:%M')} - {tb.end_time.strftime('%H:%M')}")
                 meetings_formatted = ", ".join(meeting_strs) if meeting_strs else "No meeting times"
-                print(f"  Section ID: {section.section_id:<10} | Instructor: {section.instructor:<25} | Meetings: {meetings_formatted} {status}")
+                print(f"  Section ID: {section.section_id:<10} | Instructor: {section.instructor:<25} | Location: {section.location:<25} | Meetings: {meetings_formatted} {status}")
 
     display_selected_courses_and_sections()
 
