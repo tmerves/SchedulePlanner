@@ -282,3 +282,170 @@ def test_saved_schedules_management_and_persistence(tmp_path, mock_courses):
     # 8. Test clearing saved schedules
     new_manager.clear_saved_schedules()
     assert len(new_manager.get_saved_schedules()) == 0
+
+
+
+def test_semester_isolation(mock_courses):
+    c1, c2 = mock_courses
+    manager = ScheduleSessionManager()
+
+    # Set term to Fall 2026 (0009)
+    manager.set_term("0009")
+    manager.add_course(c1)
+    manager.toggle_section("A1", is_active=False)
+    s1 = Schedule(sections=[c1.sections[1]])
+    manager.save_schedule(s1)
+
+    assert len(manager.selected_courses) == 1
+    assert "CS101" in manager.selected_courses
+    assert "A1" in manager.excluded_section_ids
+    assert len(manager.get_saved_schedules()) == 1
+
+    # Switch term to Spring 2026 (0007)
+    manager.set_term("0007")
+    assert len(manager.selected_courses) == 0
+    assert len(manager.excluded_section_ids) == 0
+    assert len(manager.get_saved_schedules()) == 0
+
+    # Add different course to Spring 2026
+    manager.add_course(c2)
+    assert len(manager.selected_courses) == 1
+    assert "MATH101" in manager.selected_courses
+    assert "CS101" not in manager.selected_courses
+
+    # Switch back to Fall 2026 (0009) - state must be completely preserved
+    manager.set_term("0009")
+    assert len(manager.selected_courses) == 1
+    assert "CS101" in manager.selected_courses
+    assert "MATH101" not in manager.selected_courses
+    assert "A1" in manager.excluded_section_ids
+    assert len(manager.get_saved_schedules()) == 1
+
+
+def test_prevent_adding_cross_semester_course(mock_courses):
+    c1, c2 = mock_courses
+    manager = ScheduleSessionManager()
+
+    manager.set_term("0009")
+
+    # c1 is explicitly tagged for Spring 2026 (0007)
+    c1_spring = Course(
+        course_id=c1.course_id,
+        title=c1.title,
+        subject=c1.subject,
+        sections=c1.sections,
+        term_code="0007"
+    )
+
+    # Attempting to add Spring course to Fall session must raise ValueError
+    with pytest.raises(ValueError, match="Cannot add course 'CS101' from semester '0007' to semester '0009'"):
+        manager.add_course(c1_spring)
+
+    assert "CS101" not in manager.selected_courses
+
+    # Attempting to add with conflicting explicit term_code must also raise ValueError
+    with pytest.raises(ValueError, match="Cannot add course 'CS101' from semester '0007' to semester '0008'"):
+        manager.add_course(c1_spring, term_code="0008")
+
+
+def test_prevent_saving_cross_semester_schedule(mock_courses):
+    c1, _ = mock_courses
+    manager = ScheduleSessionManager()
+    manager.set_term("0009")
+
+    # Schedule tagged for semester 0007
+    sched_spring = Schedule(sections=[c1.sections[0]], term_code="0007")
+
+    with pytest.raises(ValueError, match="Cannot save schedule from semester '0007' to semester '0009'"):
+        manager.save_schedule(sched_spring)
+
+    assert len(manager.get_saved_schedules()) == 0
+
+
+def test_semester_separate_persistence(tmp_path, mock_courses):
+    c1, c2 = mock_courses
+    filepath = tmp_path / "session_state.json"
+    manager = ScheduleSessionManager()
+
+    # Populate 0009
+    manager.set_term("0009")
+    manager.add_course(c1)
+    s1 = Schedule(sections=[c1.sections[0]])
+    manager.save_schedule(s1)
+
+    # Populate 0007
+    manager.set_term("0007")
+    manager.add_course(c2)
+    s2 = Schedule(sections=[c2.sections[0]])
+    manager.save_schedule(s2)
+
+    # Save multi-semester state
+    manager.save_session_state(str(filepath))
+    assert filepath.exists()
+
+    # Verify per-semester separate files were also saved
+    semesters_dir = tmp_path / "semesters"
+    file_0009 = semesters_dir / "0009.json"
+    file_0007 = semesters_dir / "0007.json"
+    assert file_0009.exists()
+    assert file_0007.exists()
+
+    # Verify loading into new manager restores both semesters independently
+    new_manager = ScheduleSessionManager()
+    new_manager.load_session_state(str(filepath))
+
+    new_manager.set_term("0009")
+    assert "CS101" in new_manager.selected_courses
+    assert "MATH101" not in new_manager.selected_courses
+    assert len(new_manager.get_saved_schedules()) == 1
+
+    new_manager.set_term("0007")
+    assert "MATH101" in new_manager.selected_courses
+    assert "CS101" not in new_manager.selected_courses
+    assert len(new_manager.get_saved_schedules()) == 1
+
+
+def test_dedicated_semester_file_save_and_load(tmp_path, mock_courses):
+    c1, _ = mock_courses
+    manager = ScheduleSessionManager()
+    manager.set_term("0009")
+    manager.add_course(c1)
+
+    # Save dedicated semester file
+    sem_file = tmp_path / "0009_state.json"
+    manager.save_semester_state("0009", filepath=str(sem_file))
+    assert sem_file.exists()
+
+    # Load into separate manager
+    new_manager = ScheduleSessionManager()
+    new_manager.load_semester_state(str(sem_file), term_code="0009")
+    new_manager.set_term("0009")
+    assert "CS101" in new_manager.selected_courses
+
+
+def test_clear_courses_and_schedules_scoped_to_semester(mock_courses):
+    c1, c2 = mock_courses
+    manager = ScheduleSessionManager()
+
+    manager.set_term("0009")
+    manager.add_course(c1)
+    manager.save_schedule(Schedule(sections=[c1.sections[0]]))
+
+    manager.set_term("0007")
+    manager.add_course(c2)
+    manager.save_schedule(Schedule(sections=[c2.sections[0]]))
+
+    # Clear 0009 courses and schedules
+    manager.set_term("0009")
+    manager.clear_courses()
+    manager.clear_saved_schedules()
+
+    assert len(manager.selected_courses) == 0
+    assert len(manager.get_saved_schedules()) == 0
+
+    # 0007 must remain untouched
+    manager.set_term("0007")
+    assert len(manager.selected_courses) == 1
+    assert "MATH101" in manager.selected_courses
+    assert len(manager.get_saved_schedules()) == 1
+

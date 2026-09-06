@@ -1,5 +1,5 @@
 from datetime import time
-from typing import Literal, List
+from typing import Literal, List, Optional
 from pydantic import BaseModel
 
 class TimeBlock(BaseModel):
@@ -13,13 +13,19 @@ class Section(BaseModel):
     instructor: str
     meeting_times: List[TimeBlock]
     location: str = "TBD"
+    term_code: Optional[str] = None
+    component: str = "Lecture"
+    linked_sections: List[str] = []
 
 class Course(BaseModel):
     course_id: str
     title: str
     subject: str
     sections: List[Section]
+    term_code: Optional[str] = None
 
 class Schedule(BaseModel):
     sections: List[Section]
     has_overlap: bool = False
+    term_code: Optional[str] = None
+

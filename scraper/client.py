@@ -142,7 +142,7 @@ class ScraperClient:
         
         response.raise_for_status()
         
-        return parse_courses(response.text, subject)
+        return parse_courses(response.text, subject, term=term_to_use)
 
     def fetch_multiple_courses(self, subjects: List[str], term: Optional[str] = None) -> List[Course]:
         """

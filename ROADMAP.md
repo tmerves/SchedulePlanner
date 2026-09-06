@@ -104,20 +104,20 @@
     - Create `app.py` as the application entry point.
     - **Session Integration:** Initialize `st.session_state.session_manager = ScheduleSessionManager()`. Automatically load persisted state on startup from `data/session_state.json`, and auto-save on any change.
     - **Interactive Tabs Structure:**
-      1. **🔍 Catalog Browser (Tab 1):**
+      1. **🔍 Catalog Browser:**
          - Sidebar: Dynamic Semester dropdown and searchable Subject multi-select.
          - Button: "Fetch Course Catalog" using a clean loading spinner (`st.spinner`).
          - Main Panel: Searchable course catalog grid. Expanding a course shows its sections and an "Add Course" button.
          - Display selected courses in an sidebar list with a "Clear All" action.
-      2. **⚙️ Section Filter Checklist (Tab 2):**
+      2. **⚙️ Section Filter Checklist:**
          - Display an expander per selected course.
          - Inside each expander, list all sections in a table with section checkboxes (checked by default).
          - Unchecking a checkbox calls `session.toggle_section(section_id, is_active=False)` to exclude the section and auto-saves the state.
-      3. **🗓️ Schedule Permutator Viewer (Tab 3):**
+      3. **🗓️ Schedule Permutator Viewer:**
          - Button: "Compute Schedules".
          - Displays total valid schedules found. If > 0, show pagination controls (`Schedule 3 of 15`), a "Save Schedule" bookmark button, and render the Plotly weekly grid.
          - If 0, show a friendly explanation of the conflict and suggestions to resolve it.
-      4. **💾 Saved Schedules Explorer (Tab 4):**
+      4. **💾 Saved Schedules Explorer:**
          - Dropdown to browse saved schedules.
          - Renders the Plotly weekly grid for the selected saved schedule.
          - Button to "Remove Saved Schedule" with instant state refresh.

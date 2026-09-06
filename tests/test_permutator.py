@@ -250,3 +250,140 @@ def test_courses_with_multiple_sections_on_same_different_days():
     for sched in schedules:
         sec_ids = {s.section_id for s in sched.sections}
         assert sec_ids != {"A2", "B2"}
+
+
+
+def test_solver_rejects_cross_semester_courses():
+    c1 = Course(
+        course_id="CS101",
+        title="Intro to CS",
+        subject="CS",
+        term_code="0009",
+        sections=[
+            Section(
+                section_id="A1",
+                course_id="CS101",
+                instructor="Prof A",
+                term_code="0009",
+                meeting_times=parse_time_blocks("M", "09:00 - 10:00")
+            )
+        ]
+    )
+
+    c2 = Course(
+        course_id="MATH101",
+        title="Calculus",
+        subject="MATH",
+        term_code="0007",
+        sections=[
+            Section(
+                section_id="B1",
+                course_id="MATH101",
+                instructor="Prof B",
+                term_code="0007",
+                meeting_times=parse_time_blocks("M", "10:30 - 11:30")
+            )
+        ]
+    )
+
+    with pytest.raises(ValueError, match="Cannot generate schedules with courses from different semesters"):
+        ScheduleSolver.find_valid_schedules([c1, c2])
+
+
+
+def test_course_with_linked_discussions():
+    # Course with a lecture and two discussion choices
+    # Lec 4834 requires either 4835 (Tuesday) or 4836 (Friday)
+    course_cs = Course(
+        course_id="ICSI 311",
+        title="Principles of Programming Languages",
+        subject="ICSI",
+        sections=[
+            Section(
+                section_id="4834",
+                course_id="ICSI 311",
+                instructor="Phipps,Michael",
+                component="Lecture",
+                linked_sections=["4835", "4836"],
+                meeting_times=parse_time_blocks("TR", "10:30 - 11:50")
+            ),
+            Section(
+                section_id="4835",
+                course_id="ICSI 311",
+                instructor="Phipps,Michael",
+                component="Discussion",
+                meeting_times=parse_time_blocks("T", "15:00 - 15:55")
+            ),
+            Section(
+                section_id="4836",
+                course_id="ICSI 311",
+                instructor="Phipps,Michael",
+                component="Discussion",
+                meeting_times=parse_time_blocks("F", "09:30 - 10:25")
+            ),
+        ]
+    )
+
+    # Standalone Course meeting Tuesday afternoon, conflicting with Discussion 4835
+    course_math = Course(
+        course_id="AMAT 220",
+        title="Linear Algebra",
+        subject="AMAT",
+        sections=[
+            Section(
+                section_id="9001",
+                course_id="AMAT 220",
+                instructor="Prof M",
+                component="Lecture",
+                meeting_times=parse_time_blocks("T", "15:00 - 16:00")
+            )
+        ]
+    )
+
+    # Solver should only find 1 valid schedule: [4834 (Lec), 4836 (Disc F), 9001]
+    schedules = ScheduleSolver.find_valid_schedules([course_cs, course_math])
+    assert len(schedules) == 1
+    schedule_sec_ids = {s.section_id for s in schedules[0].sections}
+    assert schedule_sec_ids == {"4834", "4836", "9001"}
+
+
+def test_course_with_linked_discussions_exclusions():
+    course_cs = Course(
+        course_id="ICSI 311",
+        title="Principles of Programming Languages",
+        subject="ICSI",
+        sections=[
+            Section(
+                section_id="4834",
+                course_id="ICSI 311",
+                instructor="Phipps,Michael",
+                component="Lecture",
+                linked_sections=["4835", "4836"],
+                meeting_times=parse_time_blocks("TR", "10:30 - 11:50")
+            ),
+            Section(
+                section_id="4835",
+                course_id="ICSI 311",
+                instructor="Phipps,Michael",
+                component="Discussion",
+                meeting_times=parse_time_blocks("T", "15:00 - 15:55")
+            ),
+            Section(
+                section_id="4836",
+                course_id="ICSI 311",
+                instructor="Phipps,Michael",
+                component="Discussion",
+                meeting_times=parse_time_blocks("F", "09:30 - 10:25")
+            ),
+        ]
+    )
+
+    # If 4835 is excluded, only bundle with 4836 remains
+    schedules = ScheduleSolver.find_valid_schedules([course_cs], excluded_section_ids={"4835"})
+    assert len(schedules) == 1
+    assert {s.section_id for s in schedules[0].sections} == {"4834", "4836"}
+
+    # If 4834 (the lecture) is excluded, no options remain for the course
+    schedules_no_lec = ScheduleSolver.find_valid_schedules([course_cs], excluded_section_ids={"4834"})
+    assert len(schedules_no_lec) == 0
+

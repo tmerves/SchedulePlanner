@@ -1,5 +1,5 @@
 import re
-from typing import List, Dict
+from typing import List, Dict, Optional
 from bs4 import BeautifulSoup
 from models.schema import Course, Section, TimeBlock
 from utils.time_utils import parse_time_blocks
@@ -108,10 +108,39 @@ def _parse_location_and_instructor(text: str) -> tuple[str, str]:
     return " ".join(tokens[:-1]).strip() or "TBD", tokens[-1].strip() or "Arranged"
 
 
-def parse_courses(html_content: str, subject: str) -> List[Course]:
+def extract_linked_sections(comment: str) -> List[str]:
+    """
+    Extracts linked discussion or lab section IDs from comments.
+    Handles single IDs (e.g. '4835, 4836 or 6198') and ranges (e.g. '9388-9391').
+    """
+    if not comment:
+        return []
+    linked = []
+    m = re.search(
+        r'(?:Discussion|DISC|Lab|LAB)(?:\s+section|\s+sections)?[:\s]+([0-9\s,or\-]+)',
+        comment,
+        re.IGNORECASE
+    )
+    if m:
+        target_str = m.group(1)
+        ranges = re.findall(r'(\d{4,5})\s*-\s*(\d{4,5})', target_str)
+        for r_start, r_end in ranges:
+            start_num = int(r_start)
+            end_num = int(r_end)
+            if start_num <= end_num and end_num - start_num <= 50:
+                for num in range(start_num, end_num + 1):
+                    linked.append(str(num))
+        clean_str = re.sub(r'\d{4,5}\s*-\s*\d{4,5}', '', target_str)
+        singles = re.findall(r'\b(\d{4,5})\b', clean_str)
+        linked.extend(singles)
+    return sorted(list(set(linked)))
+
+
+def parse_courses(html_content: str, subject: str, term: Optional[str] = None) -> List[Course]:
     """
     Parses search results HTML content and converts table rows (represented by key-value structures)
     into a list of Course objects with their associated Sections and TimeBlocks.
+    Optionally assigns the semester term_code to each Course and Section.
     """
     # Split by horizontal rule (<hr>) tags representing individual section records
     blocks = re.split(r'<hr\s*/?>', html_content, flags=re.IGNORECASE)
@@ -191,12 +220,19 @@ def parse_courses(html_content: str, subject: str) -> List[Course]:
             else:
                 location, instructor = _parse_location_and_instructor(meeting_info)
 
+        component = kvs.get("Component is blank if lecture", "").strip() or "Lecture"
+        comments = kvs.get("Comments", "").strip()
+        linked_sections = extract_linked_sections(comments)
+
         section_obj = Section(
             section_id=class_num,
             course_id=course_id,
             instructor=instructor or "Arranged",
             meeting_times=meeting_times,
             location=location or "TBD",
+            term_code=term,
+            component=component,
+            linked_sections=linked_sections,
         )
 
         if course_id not in courses_dict:
@@ -204,6 +240,7 @@ def parse_courses(html_content: str, subject: str) -> List[Course]:
                 "course_id": course_id,
                 "title": course_title,
                 "subject": subj_code,
+                "term_code": term,
                 "sections": []
             }
         courses_dict[course_id]["sections"].append(section_obj)

@@ -17,6 +17,12 @@ def search_results_html():
     with open(fixture_path, "r", encoding="utf-8") as f:
         return f.read()
 
+@pytest.fixture
+def discussion_example_html():
+    fixture_path = os.path.join(os.path.dirname(__file__), "fixtures", "discussionExample.txt")
+    with open(fixture_path, "r", encoding="utf-8") as f:
+        return f.read()
+
 def test_parse_semesters(search_page_html):
     semesters = parse_semesters(search_page_html)
     assert len(semesters) > 0
@@ -53,6 +59,7 @@ def test_parse_courses(search_results_html):
     sec_2259 = next((s for s in bacc_211.sections if s.section_id == "2259"), None)
     assert sec_2259 is not None
     assert sec_2259.instructor == "Moshier,Michelle"
+    assert sec_2259.location == "Lecture Center 7"
     assert len(sec_2259.meeting_times) > 0
     
     # " TTH 09:00_AM-10:20_AM" -> Days should be parsed to T and R (Tuesday and Thursday)
@@ -122,4 +129,51 @@ def test_client_fallback_on_network_error():
     assert len(subjects) > 0
 
     client.close()
+
+
+def test_client_fetch_multiple_courses(search_results_html):
+    client = ScraperClient(term="0009")
+    mock_response = MagicMock()
+    mock_response.text = search_results_html
+    mock_response.raise_for_status = MagicMock()
+    client.client.post = MagicMock(return_value=mock_response)
+
+    courses = client.fetch_multiple_courses(["BACC", "ICSI"])
+    assert len(courses) > 0
+    assert client.client.post.call_count == 2
+    client.close()
+
+
+def test_parse_courses_with_discussions(discussion_example_html):
+    courses = parse_courses(discussion_example_html, "ICSI")
+    assert len(courses) == 1
+    icsi_311 = courses[0]
+    assert icsi_311.course_id == "ICSI 311"
+    assert len(icsi_311.sections) == 4
+
+    lecture_sec = next((s for s in icsi_311.sections if s.section_id == "4834"), None)
+    assert lecture_sec is not None
+    assert lecture_sec.component == "Lecture"
+    assert set(lecture_sec.linked_sections) == {"4835", "4836", "6198"}
+
+    disc_sec = next((s for s in icsi_311.sections if s.section_id == "4835"), None)
+    assert disc_sec is not None
+    assert disc_sec.component == "Discussion"
+    assert disc_sec.linked_sections == []
+
+
+def test_extract_linked_sections_patterns():
+    from scraper.parser import extract_linked_sections
+
+    c1 = "Students registering for this section must FIRST register for a Discussion: 4835, 4836 or 6198"
+    assert extract_linked_sections(c1) == ["4835", "4836", "6198"]
+
+    c2 = "Students registering for this section must FIRST register for a DISC: 9388-9391. Discussion sessions will occur in The Learning Commons, LI-0036, Room 5 (LI0036H)"
+    assert extract_linked_sections(c2) == ["9388", "9389", "9390", "9391"]
+
+    c3 = "Students must register for Lab: 1001-1003 or 1005"
+    assert extract_linked_sections(c3) == ["1001", "1002", "1003", "1005"]
+
+    c4 = "No special restrictions"
+    assert extract_linked_sections(c4) == []
 

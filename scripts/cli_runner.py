@@ -198,6 +198,7 @@ def main():
     else:
         semester = select_semester_interactive(client)
     client.term = semester
+    session.set_term(semester)
 
     # Step 2: Select Subjects
     if args.subjects:

@@ -215,7 +215,8 @@ def create_schedule_calendar(
         end_str = tb.end_time.strftime("%I:%M %p").lstrip("0")
         duration_mins = int(round((y1 - y0) * 60))
 
-        header = f"<b>{sec.course_id} - {sec.section_id}</b>"
+        comp_label = f" ({sec.component})" if getattr(sec, "component", "Lecture") and sec.component != "Lecture" else ""
+        header = f"<b>{sec.course_id} - {sec.section_id}{comp_label}</b>"
         time_label = f"<span style='font-size:10px;'>{start_str} - {end_str}</span>"
 
         loc_str = getattr(sec, "location", "").strip()
@@ -228,10 +229,12 @@ def create_schedule_calendar(
         else:
             label = f"{header}<br>{time_label}{loc_line}"
 
+        comp_hover = f"<b>Type:</b> {getattr(sec, 'component', 'Lecture')}<br>" if getattr(sec, "component", "Lecture") else ""
         loc_hover = f"<b>Location:</b> {loc_str}<br>" if loc_str else ""
         hover = (
             f"<b>{sec.course_id}</b><br>"
             f"<b>Section:</b> {sec.section_id}<br>"
+            f"{comp_hover}"
             f"<b>Instructor:</b> {sec.instructor}<br>"
             f"{loc_hover}"
             f"<b>Day:</b> {DAY_LABELS[day_idx]}<br>"
