@@ -177,3 +177,122 @@ def test_extract_linked_sections_patterns():
     c4 = "No special restrictions"
     assert extract_linked_sections(c4) == []
 
+
+
+def test_parse_location_and_instructor_with_suffixes():
+    from scraper.parser import _parse_location_and_instructor
+
+    # Generational suffix II with classroom locations (as reported with Hono II,Daniel)
+    loc, inst = _parse_location_and_instructor("Biology 248 Hono II,Daniel")
+    assert loc == "Biology 248"
+    assert inst == "Hono II,Daniel"
+
+    loc, inst = _parse_location_and_instructor("Massry Schl of Business 231 Hono II,Daniel")
+    assert loc == "Massry Schl of Business 231"
+    assert inst == "Hono II,Daniel"
+
+    loc, inst = _parse_location_and_instructor("Massry Schl of Business 141 Hono II,Daniel")
+    assert loc == "Massry Schl of Business 141"
+    assert inst == "Hono II,Daniel"
+
+    loc, inst = _parse_location_and_instructor("Pine Bush 302 Hono II,Daniel")
+    assert loc == "Pine Bush 302"
+    assert inst == "Hono II,Daniel"
+
+    # Space after comma
+    loc, inst = _parse_location_and_instructor("Biology 248 Hono II, Daniel")
+    assert loc == "Biology 248"
+    assert inst == "Hono II, Daniel"
+
+    # Other suffixes (Jr., III, etc.)
+    loc, inst = _parse_location_and_instructor("Lecture Center 7 Smith Jr.,John")
+    assert loc == "Lecture Center 7"
+    assert inst == "Smith Jr.,John"
+
+    loc, inst = _parse_location_and_instructor("Social Science 255 Doe III,Jane")
+    assert loc == "Social Science 255"
+    assert inst == "Doe III,Jane"
+
+
+def test_parse_location_and_instructor_various_formats():
+    from scraper.parser import _parse_location_and_instructor
+
+    # Surnames with prefixes
+    loc, inst = _parse_location_and_instructor("Lecture Center 7 Van Horn,David")
+    assert loc == "Lecture Center 7"
+    assert inst == "Van Horn,David"
+
+    loc, inst = _parse_location_and_instructor("Massry Schl of Business 217 De La Cruz,Maria")
+    assert loc == "Massry Schl of Business 217"
+    assert inst == "De La Cruz,Maria"
+
+    # Special locations
+    loc, inst = _parse_location_and_instructor("Online Fernando,Guy")
+    assert loc == "Online"
+    assert inst == "Fernando,Guy"
+
+    loc, inst = _parse_location_and_instructor("Online Hono II,Daniel")
+    assert loc == "Online"
+    assert inst == "Hono II,Daniel"
+
+    loc, inst = _parse_location_and_instructor("Arranged Fernando,Guy")
+    assert loc == "Arranged"
+    assert inst == "Fernando,Guy"
+
+    loc, inst = _parse_location_and_instructor("Off Campus Smith,John")
+    assert loc == "Off Campus"
+    assert inst == "Smith,John"
+
+    loc, inst = _parse_location_and_instructor("Online")
+    assert loc == "Online"
+    assert inst == "Arranged"
+
+    loc, inst = _parse_location_and_instructor("Arranged")
+    assert loc == "Arranged"
+    assert inst == "Arranged"
+
+    # Classroom without instructor
+    loc, inst = _parse_location_and_instructor("Lecture Center 7")
+    assert loc == "Lecture Center 7"
+    assert inst == "Arranged"
+
+    loc, inst = _parse_location_and_instructor("Biology 248 Staff")
+    assert loc == "Biology 248"
+    assert inst == "Staff"
+
+    # Lone instructor string without location
+    loc, inst = _parse_location_and_instructor("Hono II,Daniel")
+    assert loc == "TBD"
+    assert inst == "Hono II,Daniel"
+
+
+def test_parse_courses_hono_instructor():
+    icsi_html = """
+    <hr>
+    Class Number: <b>4236</b><br>
+    Course Info: <b>ICSI  333 System Fundamentals</b><br>
+    Meeting Info: <b> TTH 01:30_PM-02:50_PM Biology 248 Hono II,Daniel</b><br>
+    Comments: <b> Students registering for this section must FIRST register for a Lab: 4252, 4749 or 5284</b><br>
+    <hr>
+    Class Number: <b>4252</b><br>
+    Course Info: <b>ICSI  333 System Fundamentals</b><br>
+    Component is blank if lecture: <b>Lab</b><br>
+    Meeting Info: <b> F 10:35_AM-11:30_AM Massry Schl of Business 231 Hono II,Daniel</b><br>
+    Comments: <b></b><br>
+    <hr>
+    """
+    courses = parse_courses(icsi_html, "ICSI", term="0007")
+    assert len(courses) == 1
+    c = courses[0]
+    assert c.course_id == "ICSI 333"
+
+    sec_4236 = next(s for s in c.sections if s.section_id == "4236")
+    assert sec_4236.instructor == "Hono II,Daniel"
+    assert sec_4236.location == "Biology 248"
+    assert sec_4236.component == "Lecture"
+
+    sec_4252 = next(s for s in c.sections if s.section_id == "4252")
+    assert sec_4252.instructor == "Hono II,Daniel"
+    assert sec_4252.location == "Massry Schl of Business 231"
+    assert sec_4252.component == "Lab"
+

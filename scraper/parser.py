@@ -82,27 +82,78 @@ def parse_subjects(html_content: str) -> List[Dict[str, str]]:
 def _parse_location_and_instructor(text: str) -> tuple[str, str]:
     """
     Splits the trailing meeting info text into location and instructor.
-    UAlbany instructor names typically format as 'Last,First' or 'Last,First Middle'.
+    UAlbany instructor names typically format as 'Last,First' or 'Last,First Middle',
+    or with generational suffixes like 'Last Suffix,First' (e.g. 'Hono II,Daniel').
+    Classroom locations consist of a building name and a room code containing digits
+    (e.g. 'Biology 248', 'Massry Schl of Business 231', 'Lecture Center 7').
     """
     text = text.strip()
     if not text:
         return "TBD", "Arranged"
 
-    tokens = text.split()
-    comma_idx = -1
-    for i, tok in enumerate(tokens):
-        if "," in tok:
-            comma_idx = i
-            break
+    # 1. Match special non-classroom location prefixes (e.g., Online, Arranged, Remote, TBD, TBA, Off Campus)
+    special_match = re.match(
+        r'^(online|arranged|remote|tbd|tba|off[-\s]campus)\b(?:\s+(.*))?$',
+        text,
+        re.IGNORECASE
+    )
+    if special_match:
+        loc_raw = special_match.group(1).strip()
+        inst_raw = (special_match.group(2) or "").strip()
+        loc_lower = loc_raw.lower().replace("-", " ")
+        if "off campus" in loc_lower:
+            loc = "Off Campus"
+        elif loc_lower in ("tbd", "tba"):
+            loc = loc_lower.upper()
+        else:
+            loc = loc_raw.title()
+        inst = inst_raw or "Arranged"
+        return loc, inst
 
-    if comma_idx != -1:
-        loc = " ".join(tokens[:comma_idx]).strip() or "TBD"
-        inst = " ".join(tokens[comma_idx:]).strip() or "Arranged"
+    tokens = text.split()
+
+    # 2. Classroom locations end with a room number/identifier containing at least one digit
+    # (e.g. '248', 'B008', '7', '141', '101A'). Instructor names never contain digits.
+    digit_indices = [i for i, tok in enumerate(tokens) if re.search(r'\d', tok)]
+    if digit_indices:
+        last_digit_idx = digit_indices[-1]
+        loc = " ".join(tokens[:last_digit_idx + 1]).strip() or "TBD"
+        inst = " ".join(tokens[last_digit_idx + 1:]).strip() or "Arranged"
+        return loc, inst
+
+    # 3. For locations without digits or lone instructor names, look for comma boundary
+    comma_indices = [i for i, tok in enumerate(tokens) if "," in tok]
+    if comma_indices:
+        c_idx = comma_indices[0]
+        SUFFIXES = {
+            "I", "II", "III", "IV", "V", "VI", "VII", "VIII", "IX", "X",
+            "JR", "SR", "ESQ", "MD", "PHD"
+        }
+        NAME_PREFIXES = {
+            "VAN", "VON", "DE", "DEL", "DELLA", "DER", "DI", "DA", "DU",
+            "DOS", "DAS", "LE", "LA", "AL", "EL", "SAN", "SANTA", "ST", "ST.",
+            "O", "O'"
+        }
+        comma_tok = tokens[c_idx]
+        pre_comma = comma_tok.split(",")[0].strip()
+        inst_start = c_idx
+
+        # If the part preceding the comma is a suffix (e.g. 'II,Daniel' or 'Jr.,John'),
+        # the surname includes the token immediately preceding it
+        if pre_comma.upper().replace(".", "") in SUFFIXES and inst_start > 0:
+            inst_start -= 1
+
+        # Check for surname prefixes (e.g. 'Van Horn', 'De La Cruz')
+        while inst_start > 0 and tokens[inst_start - 1].upper().replace(".", "") in NAME_PREFIXES:
+            inst_start -= 1
+
+        loc = " ".join(tokens[:inst_start]).strip() or "TBD"
+        inst = " ".join(tokens[inst_start:]).strip() or "Arranged"
         return loc, inst
 
     if len(tokens) == 1:
-        if tokens[0].lower() in ("online", "arranged", "remote", "tbd"):
-            return tokens[0], "Arranged"
+        if tokens[0].lower() in ("online", "arranged", "remote", "tbd", "tba"):
+            return tokens[0].title(), "Arranged"
         return "TBD", tokens[0]
 
     return " ".join(tokens[:-1]).strip() or "TBD", tokens[-1].strip() or "Arranged"

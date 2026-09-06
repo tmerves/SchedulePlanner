@@ -12,6 +12,7 @@
 - Write complete implementations. Never leave placeholder comments like "TODO", "implement later", or "...rest of file unchanged...".
 - Do not modify files or add dependencies outside the explicit scope of the current task.
 - Ignore 'cli_runner.py'
+- Upon completing any task, review `ARCHITECTURE.md` and `ROADMAP.md`. Update them immediately if any implemented changes alter the system design, conflict with documented specifications, or advance roadmap milestones.
 ## Test-Driven Verification
 - Do not assume code works. If a phase involves a unit test run tests using `.venv\Scripts\python.exe -m pytest` after making changes that involve unit tests.
 - If a test fails:

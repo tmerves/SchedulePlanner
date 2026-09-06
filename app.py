@@ -6,6 +6,7 @@ from models.schema import Course, Section, Schedule
 from scraper.client import ScraperClient
 from core.session import ScheduleSessionManager
 from utils.visualizer import create_schedule_calendar, get_course_color_map
+from utils.time_utils import format_meeting_times
 
 # Application-wide state storage path
 STATE_FILE = "data/session_state.json"
@@ -55,17 +56,6 @@ def fetch_subjects(term_code: str) -> List[Dict[str, str]]:
     with ScraperClient(term=term_code) as client:
         return client.get_available_subjects(term=term_code)
 
-
-def format_meeting_times(meeting_times) -> str:
-    """Formats a list of TimeBlocks into a concise human-readable string."""
-    if not meeting_times:
-        return "Arranged / Online"
-    formatted_blocks = []
-    for tb in meeting_times:
-        start_str = tb.start_time.strftime("%I:%M %p").lstrip("0")
-        end_str = tb.end_time.strftime("%I:%M %p").lstrip("0")
-        formatted_blocks.append(f"{tb.day} {start_str} - {end_str}")
-    return ", ".join(formatted_blocks)
 
 def get_organized_course_sections(course: Course):
     """

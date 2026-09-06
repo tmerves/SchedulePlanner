@@ -58,7 +58,7 @@
     - `fetch_multiple_courses(subjects, term) -> list[Course]`: Batch fetch across multiple departments.
   - In `scraper/parser.py`:
     - `parse_semesters(html)` and `parse_subjects(html)`.
-    - `_parse_location_and_instructor(text)`: Distinguishes physical building/room location from instructor names.
+    - `_parse_location_and_instructor(text)`: Distinguishes physical building/room location from instructor names (including generational suffixes like 'II', multi-word surnames, and virtual locations).
     - `extract_linked_sections(comment)`: Extracts linked discussion/lab IDs (including single IDs and numeric ranges) from section comments.
     - `parse_courses(html, subject, term)`: Transforms HTML key-value blocks into validated `Course` models with tagged `term_code`.
   - In `tests/test_scraper.py`: Automated tests using offline HTML fixtures (`tests/fixtures/searchPage.html`, `searchResults.html`).

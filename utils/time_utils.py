@@ -1,6 +1,6 @@
 import re
 from datetime import time
-from typing import List, Tuple
+from typing import List, Tuple, Optional
 from models.schema import TimeBlock, Section
 
 def parse_single_time(t_str: str) -> time:
@@ -28,12 +28,39 @@ def parse_single_time(t_str: str) -> time:
         
     raise ValueError(f"Invalid time format: {t_str}")
 
+DAY_DISPLAY_MAP: dict[str, str] = {
+    "M": "M",
+    "T": "T",
+    "W": "W",
+    "R": "TH",
+    "F": "F",
+    "S": "S",
+    "U": "U",
+}
+
+def format_meeting_times(meeting_times: Optional[List[TimeBlock]]) -> str:
+    """
+    Formats a list of TimeBlocks into a concise human-readable string.
+    Translates internal single-letter 'R' day representation into 'TH' for display.
+    """
+    if not meeting_times:
+        return "Arranged / Online"
+    formatted_blocks = []
+    for tb in meeting_times:
+        start_str = tb.start_time.strftime("%I:%M %p").lstrip("0")
+        end_str = tb.end_time.strftime("%I:%M %p").lstrip("0")
+        day_label = DAY_DISPLAY_MAP.get(tb.day, tb.day)
+        formatted_blocks.append(f"{day_label} {start_str} - {end_str}")
+    return ", ".join(formatted_blocks)
+
 def parse_time_blocks(days_str: str, time_str: str) -> List[TimeBlock]:
     """
-    Parses a day abbreviation string (e.g. 'MWF', 'TR') and time range string
+    Parses a day abbreviation string (e.g. 'MWF', 'TR', 'TTH', 'TH') and time range string
     (e.g. '09:30 AM - 10:45 AM' or '14:00 - 15:15') into a list of TimeBlock objects.
     """
     days_str = days_str.strip().upper()
+    # Normalize UAlbany's 'TH' to internal single-letter 'R' representation
+    days_str = days_str.replace("TH", "R")
     days = [char for char in days_str if char in "MTWRFSU"]
     
     parts = re.split(r'\s*-\s*|\s+to\s+', time_str, flags=re.IGNORECASE)

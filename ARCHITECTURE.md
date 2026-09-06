@@ -41,7 +41,7 @@ University Portal (Web/HTML)
 * **Dynamic Options:** Scrapes active semesters and departments dynamically (`get_available_semesters`, `get_available_subjects`) with static fallbacks for offline resilience.
 * **Field Parsing:**
   * Extracts meeting days and parses time spans into validated `TimeBlock` lists.
-  * Separates physical classroom locations from instructor names (`_parse_location_and_instructor`).
+  * Separates physical classroom locations from instructor names (`_parse_location_and_instructor`), robustly handling room numbers with digits, generational suffixes (e.g. `II`, `Jr.`), compound surnames (e.g. `Van Horn`, `De La Cruz`), and non-classroom keywords (`Online`, `Arranged`, `Off Campus`).
   * Extracts section component types (`Lecture`, `Discussion`, `Lab`, `Seminar`, etc.).
   * Parses comments to identify linked discussion and lab section IDs (`extract_linked_sections`).
 * **Multi-Subject Queries:** Supports batch fetching across multiple subjects (`fetch_multiple_courses`).

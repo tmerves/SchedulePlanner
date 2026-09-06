@@ -6,6 +6,7 @@ from utils.time_utils import (
     parse_time_blocks,
     is_time_conflict,
     do_sections_conflict,
+    format_meeting_times,
 )
 
 def test_parse_single_time_12h():
@@ -116,3 +117,44 @@ def test_do_sections_conflict():
         meeting_times=parse_time_blocks("W", "10:00 - 11:00")
     )
     assert not do_sections_conflict(sec_a, sec_d)
+
+
+def test_parse_time_blocks_thursday_variations():
+    # Thursday as "TH" (e.g. UAlbany ICSI 213 section 5014)
+    blocks_th = parse_time_blocks("TH", "04:30 PM - 05:25 PM")
+    assert len(blocks_th) == 1
+    assert blocks_th[0] == TimeBlock(day="R", start_time=time(16, 30), end_time=time(17, 25))
+
+    # Tuesday and Thursday as "TTH"
+    blocks_tth = parse_time_blocks("TTH", "09:00 AM - 10:20 AM")
+    assert len(blocks_tth) == 2
+    assert blocks_tth[0] == TimeBlock(day="T", start_time=time(9, 0), end_time=time(10, 20))
+    assert blocks_tth[1] == TimeBlock(day="R", start_time=time(9, 0), end_time=time(10, 20))
+
+
+def test_format_meeting_times_thursday_display():
+    # Thursday meeting time (ICSI 213 section 5014) must display "TH", not "R"
+    sec_5014_blocks = [
+        TimeBlock(day="R", start_time=time(16, 30), end_time=time(17, 25))
+    ]
+    assert format_meeting_times(sec_5014_blocks) == "TH 4:30 PM - 5:25 PM"
+
+    # Multi-day section with Tuesday and Thursday
+    tth_blocks = [
+        TimeBlock(day="T", start_time=time(9, 0), end_time=time(10, 20)),
+        TimeBlock(day="R", start_time=time(9, 0), end_time=time(10, 20)),
+    ]
+    assert format_meeting_times(tth_blocks) == "T 9:00 AM - 10:20 AM, TH 9:00 AM - 10:20 AM"
+
+    # MWF section
+    mwf_blocks = [
+        TimeBlock(day="M", start_time=time(9, 30), end_time=time(10, 45)),
+        TimeBlock(day="W", start_time=time(9, 30), end_time=time(10, 45)),
+        TimeBlock(day="F", start_time=time(9, 30), end_time=time(10, 45)),
+    ]
+    assert format_meeting_times(mwf_blocks) == "M 9:30 AM - 10:45 AM, W 9:30 AM - 10:45 AM, F 9:30 AM - 10:45 AM"
+
+    # Arranged / Online
+    assert format_meeting_times([]) == "Arranged / Online"
+    assert format_meeting_times(None) == "Arranged / Online"
+
