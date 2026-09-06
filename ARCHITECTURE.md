@@ -1,66 +1,124 @@
 # Course Schedule Builder Architecture
 
 ## Overview
-A pipeline-based system that scrapes university course listings, allows users to filter/select courses and sections, and computes non-overlapping schedule permutations.
+A modular, pipeline-based system that dynamically scrapes university course listings, manages user course selections and section preferences across isolated academic semesters, computes conflict-free weekly schedule permutations (including linked lectures, discussions, and labs), and renders interactive visual calendars.
+
+---
 
 ## System Pipeline & Data Flow
 
-1. Scraper Module (`scraper/`)
-   - Inputs: University portal endpoint / filters (subject, semester).
-   - Dynamic options: Scrapes valid semesters and subjects rather than hardcoding.
-   - Output: `raw_courses.json` containing standardized course and section models.
+```
+University Portal (Web/HTML)
+        │
+        ▼
+[Scraper Module: scraper/client.py & parser.py]
+  - Dynamically fetches semesters and subjects
+  - Parses courses, sections, time blocks, locations, components, and linked discussions/labs
+  - Caches catalogs to data/cache/{term_code}_{subject_code}.json
+        │
+        ▼
+[Session & Multi-Semester Manager: core/session.py]
+  - Manages active semester and partitions state by term_code
+  - Tracks user-selected courses, section exclusions, and bookmarked schedules
+  - Persists multi-semester state to data/session_state.json & data/semesters/{term_code}.json
+  - Enforces cross-semester data integrity guards
+        │
+        ▼
+[Permutator & Collision Engine: solver/permutator.py & utils/time_utils.py]
+  - Bundles primary lectures with eligible linked discussions/labs (get_course_options)
+  - Recursive backtracking with early-exit branch pruning
+  - Evaluates day/time interval collisions (do_sections_conflict)
+  - Guarantees non-overlapping schedules
+        │
+        ▼
+[Presentation & Visual Layer: app.py & utils/visualizer.py]
+  - Streamlit multi-tab web application (Catalog, Filter Checklist, Permutator Viewer, Saved Explorer)
+  - Coordinate-based Plotly weekly calendar with pastel blocks, location tags, and rich tooltips
+```
 
-2. Course Selector Module (`selector/courses.py`)
-   - Input: Course catalog from scraper.
-   - Functionality: UI/CLI prompt for users to pick courses. Supports continuous updates/re-selection across different subjects.
-   - Output: `selected_courses.json` (filtered subset of catalog courses).
+### 1. Dynamic University Scraper Engine (`scraper/client.py`, `scraper/parser.py`)
+* **Inputs:** Target university registrar search endpoint (`search.pl`), academic semester code, and academic subject.
+* **Dynamic Options:** Scrapes active semesters and departments dynamically (`get_available_semesters`, `get_available_subjects`) with static fallbacks for offline resilience.
+* **Field Parsing:**
+  * Extracts meeting days and parses time spans into validated `TimeBlock` lists.
+  * Separates physical classroom locations from instructor names (`_parse_location_and_instructor`).
+  * Extracts section component types (`Lecture`, `Discussion`, `Lab`, `Seminar`, etc.).
+  * Parses comments to identify linked discussion and lab section IDs (`extract_linked_sections`).
+* **Multi-Subject Queries:** Supports batch fetching across multiple subjects (`fetch_multiple_courses`).
+* **Caching:** Results cached by session manager at `data/cache/{term_code}_{subject_code}.json`.
 
-3. Section Selector Module (`selector/sections.py`)
-   - Input: `selected_courses.json`.
-   - Functionality: Filter out unwanted times/professors/formats per course.
-   - Output: `candidate_sections.json` (eligible sections per course).
+### 2. Session State & Multi-Semester Isolation (`core/session.py`)
+* **State Management:** `ScheduleSessionManager` encapsulates all active user state.
+* **Per-Semester Isolation:** Courses, section exclusions, and saved schedules are strictly segregated by `term_code` in `_semesters: Dict[str, Dict[str, Any]]`.
+* **Cross-Semester Guards:** Prevents accidental mixing of courses across semesters and disallows bookmarking schedules into incompatible semesters.
+* **Solver Pre-Filtering:** `get_active_courses(term_code)` filters out excluded sections and prepares clean `Course` bundles for permutation solving.
+* **Dual-Level Disk Persistence:**
+  * Root file `data/session_state.json` stores active semester metadata and all distinct semester state dictionaries.
+  * Dedicated per-semester snapshot files are saved to `data/semesters/{term_code}.json`.
+  * Fully backward-compatible: transparently migrates legacy flat session files.
 
-4. Permutator & Solver Module (`solver/permutator.py`)
-   - Input: Grouped eligible sections per course.
-   - Functionality: Cartesian product + overlap rejection algorithm (time interval collision detection).
-   - Output: List of valid, non-overlapping weekly schedule matrices.
+### 3. Permutation Solver & Collision Engine (`solver/permutator.py`, `utils/time_utils.py`)
+* **Collision Detection:** `utils/time_utils.py` converts time strings to minutes-from-midnight integers and performs interval intersection checks (`is_time_conflict`, `do_sections_conflict`).
+* **Linked Bundle Generation:** `ScheduleSolver.get_course_options()` constructs candidate section bundles:
+  * Standalone courses: `[lecture]`.
+  * Courses with linked requirements: `[lecture, discussion]` or `[lecture, lab]`, verifying that the paired sections do not internally conflict.
+* **Pruning Backtracker:** `find_valid_schedules()` traverses candidate course bundles using early-pruning recursive backtracking. Branches encountering a time conflict are aborted immediately.
+* **Semester Verification:** Rejects course sets that span multiple distinct semesters (`ValueError`).
 
-5. Presentation Layer (`cli/` or `ui/`)
-   - Display rendered schedules with course IDs, section codes, meeting times, and locations.
+### 4. Presentation & Visualization Layer (`app.py`, `utils/visualizer.py`)
+* **Streamlit Application (`app.py`):**
+  * **Sidebar:** Dynamic semester dropdown and searchable multi-subject picker. Switching semesters synchronizes active term and resets computed permutations.
+  * **Tab 1: 🔍 Catalog Browser:** Searchable course list, showing section counts, instructors, locations, and nested linked discussions (`get_organized_course_sections`).
+  * **Tab 2: ⚙️ Section Filter Checklist:** Per-course section checkboxes with indented discussion sections, plus bulk "Select All" and "Deselect All" controls.
+  * **Tab 3: 🗓️ Schedule Permutator Viewer:** Solves valid schedules, provides navigation pagination and jump slider, displays bookmarked status, renders the Plotly calendar, and presents hierarchical breakdown tables.
+  * **Tab 4: 💾 Saved Schedules Explorer:** Browse saved schedules for any semester, view visual timetable grids, inspect course breakdowns, or remove/clear saved schedules.
+* **Visualizer Module (`utils/visualizer.py`):**
+  * Coordinate system: X-axis represents day of the week (Mon–Fri, auto-expanding to Sat/Sun if needed); Y-axis represents decimal hour (reversed so mornings start at the top).
+  * Rounded pastel block shapes with darker border tones (`_get_border_color`).
+  * Displays course code, section number, component badge, meeting time, and physical classroom location.
+  * Rich hover tooltips with complete section details and duration.
 
-6. Session State & Persistence Module (`core/session.py`)
-   - Input: User course selections, section toggle actions, solver output, and user-saved schedules.
-   - Functionality:
-     - Caches scraped university catalogs to avoid redundant network requests.
-     - Tracks user's chosen courses and custom section filters.
-     - **Maintains saved schedules:** Allows users to bookmark/save preferred valid schedules.
-     - Serializes and deserializes the entire application state (selections, exclusions, and saved schedules) to/from a local JSON state file (`session_state.json`).
-   - Output: Filtered inputs for solver; list of saved, non-overlapping weekly schedules.
+---
 
 ## Shared Data Contracts (Pydantic Models)
 
-All modules must communicate using strict models (`models/schema.py`):
+All modules communicate through strict Pydantic v2 schemas in `models/schema.py`:
 
-- `TimeBlock`:
-  - `day`: Literal["M", "T", "W", "R", "F", "S", "U"]
-  - `start_time`: `time` (e.g., 09:00)
-  - `end_time`: `time` (e.g., 10:15)
-- `Section`:
-  - `section_id`: str
-  - `course_id`: str
-  - `instructor`: str
-  - `meeting_times`: list[TimeBlock]
-- `Course`:
-  - `course_id`: str (e.g., "CS 101")
-  - `title`: str
-  - `subject`: str
-  - `sections`: list[Section]
-- `Schedule`:
-  - `sections`: list[Section]
-  - `has_overlap`: bool (always False in final outputs)
+```python
+class TimeBlock(BaseModel):
+    day: Literal["M", "T", "W", "R", "F", "S", "U"]
+    start_time: time
+    end_time: time
+
+class Section(BaseModel):
+    section_id: str
+    course_id: str
+    instructor: str
+    meeting_times: List[TimeBlock]
+    location: str = "TBD"
+    term_code: Optional[str] = None
+    component: str = "Lecture"
+    linked_sections: List[str] = []
+
+class Course(BaseModel):
+    course_id: str
+    title: str
+    subject: str
+    sections: List[Section]
+    term_code: Optional[str] = None
+
+class Schedule(BaseModel):
+    sections: List[Section]
+    has_overlap: bool = False
+    term_code: Optional[str] = None
+```
+
+---
 
 ## Technical Constraints & Guidelines
-- Language: Python 3.10+
-- Type Safety: Full type annotations, validated via `pydantic`.
-- Time Parsing: Convert strings (e.g., "9:30 AM - 10:45 AM") to integer minutes from midnight or `datetime.time` objects for collision checks.
-- Testing: Pytest test suite covering interval overlap edge cases (adjacent times, exact overlaps, partial overlaps).
+- **Python Version:** Python 3.10+ (tested through 3.14).
+- **Environment:** Dedicated virtual environment (`.venv`). Always run scripts via `.venv\Scripts\python.exe` (Windows).
+- **Type Safety & Schema Validation:** Full type hints throughout, validated via `pydantic`.
+- **Headless-First Engine:** `models/`, `solver/`, `scraper/`, and `core/` operate independently of Streamlit or presentation logic.
+- **Time Parsing & Collision:** Parse time range strings into minutes-from-midnight integers for overlap detection (`utils/time_utils.py`).
+- **Automated Verification:** Comprehensive `pytest` test suite covering time collisions, early-exit pruning, discussion/lab bundles, HTML parsing, multi-semester isolation, and visualizer generation.

@@ -1,0 +1,125 @@
+<html><head>
+   <title>  </title>
+</head>
+<body bgcolor="#F0F0F0">
+<p align="center">
+<font face="Arial" size="3" color="black">
+<b>  </b>
+</font>
+</p>
+<br>
+<font face="Arial" size="2" color="black">
+Number of matches: <b>4</b><br>
+<hr>
+Level: <b>Undergraduate</b><br>
+College or School: <b>College of Nanotechnology, Science, &amp; Engineering</b><br>
+Department or Program: <b>Computer Science</b><br>
+Class Number: <b> 4834</b><br>
+Grading: <b>A-E</b><br>
+Course Info: <b>ICSI  311 Principles Programming Lang</b><br>
+Meeting Info: <b> TTH 10:30_AM-11:50_AM Lecture Center 2 Phipps,Michael</b><br>
+Comments: <b> Students registering for this section must FIRST register for a Discussion: 4835, 4836 or 6198</b><br>
+Credit Range: <b> 4.0- 4.0</b><br>
+Component is blank if lecture: <b> </b><br>
+Topic if applicable: <b> </b><br>
+Seats remaining as of last update: <b>26</b><br>
+Session: <b>Semester Length</b><br>
+IT Commons: <b>Y</b><br>
+Course Delivery Method: <b>INPERSON</b><br>
+General Education Course: <b>NONE</b><br>
+Honors College Course: <b>N</b><br>
+Writing Intensive: <b>N</b><br>
+Oral Discourse: <b>N</b><br>
+Info Literacy: <b>N</b><br>
+Special Restriction: <b>None</b><br>
+COIL - Collaborative Online International Learning: <b>NONE</b><br>
+OER - Open Educational Resources: <b>NONE</b><br>
+Liberal Arts Course: <b>NONE</b><br>
+Course Description: <b>Introduction to the design and implementation of programming languages, including language features, paradigms and design decisions. Briefly covers functional and logical programming paradigms and reinforces object-oriented concepts. Discusses interpreters, compilers, transpires and virtual machines, including lexical analysis, parsing, semantic analysis, optimization, code generation. Introduction to automata and state machines. Prerequisite(s): grade of C or better required in I CSI 210 and I CSI 213.
+</b><br>
+<hr>
+Level: <b>Undergraduate</b><br>
+College or School: <b>College of Nanotechnology, Science, &amp; Engineering</b><br>
+Department or Program: <b>Computer Science</b><br>
+Class Number: <b> 4835</b><br>
+Grading: <b>A-E</b><br>
+Course Info: <b>ICSI  311 Principles Programming Lang</b><br>
+Meeting Info: <b> T 03:00_PM-03:55_PM Social Science 255 Phipps,Michael</b><br>
+Comments: <b></b><br>
+Credit Range: <b>0.0-0.0</b><br>
+Component is blank if lecture: <b>Discussion</b><br>
+Topic if applicable: <b> </b><br>
+Seats remaining as of last update: <b>2</b><br>
+Session: <b>Semester Length</b><br>
+IT Commons: <b>Y</b><br>
+Course Delivery Method: <b>INPERSON</b><br>
+General Education Course: <b>NONE</b><br>
+Honors College Course: <b>N</b><br>
+Writing Intensive: <b>N</b><br>
+Oral Discourse: <b>N</b><br>
+Info Literacy: <b>N</b><br>
+Special Restriction: <b>None</b><br>
+COIL - Collaborative Online International Learning: <b>NONE</b><br>
+OER - Open Educational Resources: <b>NONE</b><br>
+Liberal Arts Course: <b>NONE</b><br>
+Course Description: <b>Introduction to the design and implementation of programming languages, including language features, paradigms and design decisions. Briefly covers functional and logical programming paradigms and reinforces object-oriented concepts. Discusses interpreters, compilers, transpires and virtual machines, including lexical analysis, parsing, semantic analysis, optimization, code generation. Introduction to automata and state machines. Prerequisite(s): grade of C or better required in I CSI 210 and I CSI 213.
+</b><br>
+<hr>
+Level: <b>Undergraduate</b><br>
+College or School: <b>College of Nanotechnology, Science, &amp; Engineering</b><br>
+Department or Program: <b>Computer Science</b><br>
+Class Number: <b> 4836</b><br>
+Grading: <b>A-E</b><br>
+Course Info: <b>ICSI  311 Principles Programming Lang</b><br>
+Meeting Info: <b> F 09:30_AM-10:25_AM Social Science 255 Phipps,Michael</b><br>
+Comments: <b></b><br>
+Credit Range: <b>0.0-0.0</b><br>
+Component is blank if lecture: <b>Discussion</b><br>
+Topic if applicable: <b> </b><br>
+Seats remaining as of last update: <b>15</b><br>
+Session: <b>Semester Length</b><br>
+IT Commons: <b>Y</b><br>
+Course Delivery Method: <b>INPERSON</b><br>
+General Education Course: <b>NONE</b><br>
+Honors College Course: <b>N</b><br>
+Writing Intensive: <b>N</b><br>
+Oral Discourse: <b>N</b><br>
+Info Literacy: <b>N</b><br>
+Special Restriction: <b>None</b><br>
+COIL - Collaborative Online International Learning: <b>NONE</b><br>
+OER - Open Educational Resources: <b>NONE</b><br>
+Liberal Arts Course: <b>NONE</b><br>
+Course Description: <b>Introduction to the design and implementation of programming languages, including language features, paradigms and design decisions. Briefly covers functional and logical programming paradigms and reinforces object-oriented concepts. Discusses interpreters, compilers, transpires and virtual machines, including lexical analysis, parsing, semantic analysis, optimization, code generation. Introduction to automata and state machines. Prerequisite(s): grade of C or better required in I CSI 210 and I CSI 213.
+</b><br>
+<hr>
+Level: <b>Undergraduate</b><br>
+College or School: <b>College of Nanotechnology, Science, &amp; Engineering</b><br>
+Department or Program: <b>Computer Science</b><br>
+Class Number: <b> 6198</b><br>
+Grading: <b>A-E</b><br>
+Course Info: <b>ICSI  311 Principles Programming Lang</b><br>
+Meeting Info: <b> F 10:35_AM-11:30_AM Social Science 255 Phipps,Michael</b><br>
+Comments: <b></b><br>
+Credit Range: <b>0.0-0.0</b><br>
+Component is blank if lecture: <b>Discussion</b><br>
+Topic if applicable: <b> </b><br>
+Seats remaining as of last update: <b>9</b><br>
+Session: <b>Semester Length</b><br>
+IT Commons: <b>Y</b><br>
+Course Delivery Method: <b>INPERSON</b><br>
+General Education Course: <b>NONE</b><br>
+Honors College Course: <b>N</b><br>
+Writing Intensive: <b>N</b><br>
+Oral Discourse: <b>N</b><br>
+Info Literacy: <b>N</b><br>
+Special Restriction: <b>None</b><br>
+COIL - Collaborative Online International Learning: <b>NONE</b><br>
+OER - Open Educational Resources: <b>NONE</b><br>
+Liberal Arts Course: <b>NONE</b><br>
+Course Description: <b>Introduction to the design and implementation of programming languages, including language features, paradigms and design decisions. Briefly covers functional and logical programming paradigms and reinforces object-oriented concepts. Discusses interpreters, compilers, transpires and virtual machines, including lexical analysis, parsing, semantic analysis, optimization, code generation. Introduction to automata and state machines. Prerequisite(s): grade of C or better required in I CSI 210 and I CSI 213.
+</b><br>
+<hr>
+</font>
+
+
+</body></html>
