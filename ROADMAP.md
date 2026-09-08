@@ -97,6 +97,7 @@
   - **Task 5.3: Build Isolated Visualizer Module**
     - In `utils/visualizer.py`, created coordinate-based schedule visualizer:
       - Coordinate system: X is day of week (0 to 4 for M-F, auto-expanding for weekends), Y is decimal hour (reversed so mornings start at the top).
+      - Gridline formatting: Vertical gridlines placed in between columns (`minor.tickvals`) instead of running down the center of columns; horizontal gridlines spaced every 0.25 hours so each hour is divided into 4 rows with full-hour labels.
       - `create_schedule_calendar(schedule, course_colors)`: Renders custom rounded pastel rectangle shapes via `fig.add_shape` with darker borders (`_get_border_color`).
       - Automatically expands Y-axis range if classes fall outside 8:00 AM – 8:00 PM.
       - Displays course ID, section ID, component badge (`Lecture`, `Discussion`, `Lab`), times, and classroom location.

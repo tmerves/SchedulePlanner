@@ -206,3 +206,30 @@ def test_arranged_section_with_location():
     assert len(fig.layout.annotations) >= 1
     assert "BACC 518 (Sec 2289) [Online]" in fig.layout.annotations[0].text
 
+
+
+def test_gridlines_between_columns_and_quarter_hour_rows(mock_schedule):
+    fig = create_schedule_calendar(mock_schedule)
+
+    # 1. Verify vertical gridlines: center grid is off, minor grid is between columns
+    assert fig.layout.xaxis.showgrid is False
+    assert fig.layout.xaxis.minor.showgrid is True
+    assert list(fig.layout.xaxis.minor.tickvals) == [0.5, 1.5, 2.5, 3.5]
+
+    # 2. Verify horizontal gridlines: 4 rows per hour (0.25 increment)
+    y_tickvals = list(fig.layout.yaxis.tickvals)
+    assert len(y_tickvals) > 0
+    # Difference between consecutive tickvals should be 0.25
+    for i in range(len(y_tickvals) - 1):
+        assert pytest.approx(y_tickvals[i + 1] - y_tickvals[i]) == 0.25
+
+    # 3. Verify horizontal labels: only whole hours have text labels; quarter hours are blank
+    y_ticktext = list(fig.layout.yaxis.ticktext)
+    assert len(y_tickvals) == len(y_ticktext)
+    for val, text in zip(y_tickvals, y_ticktext):
+        if abs(val - round(val)) < 1e-6:
+            assert text != ""
+            assert ("AM" in text or "PM" in text)
+        else:
+            assert text == ""
+

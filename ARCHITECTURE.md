@@ -74,6 +74,8 @@ University Portal (Web/HTML)
   * **Tab 4: 💾 Saved Schedules Explorer:** Browse saved schedules for any semester, view visual timetable grids, inspect course breakdowns, or remove/clear saved schedules.
 * **Visualizer Module (`utils/visualizer.py`):**
   * Coordinate system: X-axis represents day of the week (Mon–Fri, auto-expanding to Sat/Sun if needed); Y-axis represents decimal hour (reversed so mornings start at the top).
+  * Column dividers: Vertical gridlines run in between day columns rather than down the column centers.
+  * Quarter-hour horizontal gridlines: Divides each hour into 4 rows (15-minute intervals) with clean hourly labels on the Y-axis.
   * Rounded pastel block shapes with darker border tones (`_get_border_color`).
   * Displays course code, section number, component badge, meeting time, and physical classroom location.
   * Rich hover tooltips with complete section details and duration.

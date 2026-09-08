@@ -174,7 +174,7 @@ def create_schedule_calendar(
     scatter_text: List[str] = []
     scatter_hover: List[str] = []
 
-    col_width = 0.84
+    col_width = 1.0
     for sec, tb, day_idx, y0, y1 in all_timeblocks:
         if y1 <= y0:
             continue
@@ -185,27 +185,16 @@ def create_schedule_calendar(
         fill_color = course_colors.get(sec.course_id, "#BEE1E6")
         border_color = _get_border_color(fill_color)
 
-        rx = 0.05
-        ry = min(0.10, abs(y1 - y0) * 0.15)
-        path = (
-            f"M {x0 + rx} {y0} "
-            f"L {x1 - rx} {y0} "
-            f"Q {x1} {y0} {x1} {y0 + ry} "
-            f"L {x1} {y1 - ry} "
-            f"Q {x1} {y1} {x1 - rx} {y1} "
-            f"L {x0 + rx} {y1} "
-            f"Q {x0} {y1} {x0} {y1 - ry} "
-            f"L {x0} {y0 + ry} "
-            f"Q {x0} {y0} {x0 + rx} {y0} Z"
-        )
-
         fig.add_shape(
-            type="path",
-            path=path,
+            type="rect",
+            x0=x0,
+            x1=x1,
+            y0=y0,
+            y1=y1,
             fillcolor=fill_color,
             line=dict(color=border_color, width=1.5),
-            opacity=0.92,
-            layer="below",
+            opacity=1.0,
+            layer="between",
         )
 
         center_x = float(day_idx)
@@ -274,13 +263,19 @@ def create_schedule_calendar(
             )
         )
 
-    # X-axis configuration
+    # X-axis configuration: major ticks for day labels (without column-center gridlines),
+    # and minor ticks between columns for dividers.
     x_tickvals = list(range(max_day + 1))
     x_ticktext = [DAY_LABELS[i] for i in x_tickvals]
+    x_minor_tickvals = [i + 0.5 for i in range(max_day)]
 
-    # Y-axis configuration
-    y_tickvals = list(range(int(min_hour), int(max_hour) + 1))
-    y_ticktext = [format_hour_label(h) for h in y_tickvals]
+    # Y-axis configuration: quarter-hour ticks (4 rows per hour) with hourly labels
+    num_quarter_steps = int(round((max_hour - min_hour) * 4))
+    y_tickvals = [min_hour + (step * 0.25) for step in range(num_quarter_steps + 1)]
+    y_ticktext = [
+        format_hour_label(int(round(h))) if abs(h - round(h)) < 1e-6 else ""
+        for h in y_tickvals
+    ]
 
     fig.update_layout(
         margin=dict(l=65, r=25, t=50, b=30),
@@ -298,8 +293,14 @@ def create_schedule_calendar(
             tickvals=x_tickvals,
             ticktext=x_ticktext,
             range=[-0.5, max_day + 0.5],
-            showgrid=True,
-            gridcolor="#E5E7EB",
+            showgrid=False,
+            minor=dict(
+                tickmode="array",
+                tickvals=x_minor_tickvals,
+                showgrid=True,
+                gridcolor="#E5E7EB",
+                gridwidth=1,
+            ),
             zeroline=False,
             fixedrange=True,
             side="top",
