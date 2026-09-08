@@ -77,6 +77,7 @@
     - Cross-semester safety guards: Disallows adding courses or bookmarking schedules across mismatched terms.
     - Course & Section controls: `add_course()`, `remove_course()`, `clear_courses()`, `toggle_section()`, `get_active_courses()`.
     - Saved Schedules: `save_schedule()`, `remove_saved_schedule()`, `get_saved_schedules()`, `clear_saved_schedules()`.
+    - Selection & Bookmark Limits: Enforces a cap of 15 selected courses (`MAX_SELECTED_COURSES = 15`) and 8 saved schedules (`MAX_SAVED_SCHEDULES = 8`) per semester.
     - Dual Persistence: `save_session_state()` and `load_session_state()` save unified multi-semester state in `data/session_state.json` and per-semester snapshots in `data/semesters/{term_code}.json` with backward-compatible legacy migration.
   - In `tests/test_session.py`: Comprehensive tests verifying semester isolation, cross-semester error handling, section toggles, and multi-semester persistence.
 * **Acceptance Criteria & Status:** Complete. State transitions and saved schedules accurately reflect user modifications, multi-semester isolation is enforced, persistence is reliable and backward-compatible; `pytest tests/test_session.py` passes 100%.
@@ -111,9 +112,16 @@
       - **Tab 2: ⚙️ Section Filter Checklist:** Per-course section toggles with nested discussion checkboxes, Select All / Deselect All bulk actions, and auto-saving to session state.
       - **Tab 3: 🗓️ Schedule Permutator Viewer:** Compute conflict-free schedules button, pagination navigation with jump slider, duplicate-aware Bookmark button, interactive Plotly calendar chart, and hierarchical schedule breakdown dataframe.
       - **Tab 4: 💾 Saved Schedules Explorer:** Semester selector dropdown to browse saved schedules for any term, Remove Schedule and Clear All actions, Plotly calendar view, and schedule breakdown table.
+  - **Task 5.5: Implement Per-User Session Persistence & Unique URL Parameter**
+    - Implemented random session ID generator (`generate_session_id`) and directory traversal validator (`is_valid_session_id`).
+    - Routed user session states to isolated filepaths (`data/sessions/{session_id}/session_state.json`).
+    - Preserved shared catalog caching (`data/cache/{term}_{subject}.json`) across all concurrent users.
+    - Synchronized unique session IDs with Streamlit query parameters (`st.query_params["session_id"]`), enabling users to bookmark and return to their exact state via URL.
+    - Added sidebar session management UI (session ID view & "Start Fresh Session" action).
 * **Acceptance Criteria & Status:** Complete.
   - `pytest tests/test_visualizer.py` passes 100%.
-  - `streamlit run app.py` launches cleanly with full state persistence to `data/session_state.json`.
+  - `pytest tests/test_session.py` passes 100% with per-user isolation and traversal checks.
+  - `streamlit run app.py` launches cleanly with per-user unique URL sessions and shared catalog caching.
 
 ---
 

@@ -4,12 +4,14 @@ import streamlit as st
 import pandas as pd
 from models.schema import Course, Section, Schedule
 from scraper.client import ScraperClient
-from core.session import ScheduleSessionManager
+from core.session import (
+    ScheduleSessionManager,
+    generate_session_id,
+    is_valid_session_id,
+    get_user_session_filepath,
+)
 from utils.visualizer import create_schedule_calendar, get_course_color_map
 from utils.time_utils import format_meeting_times
-
-# Application-wide state storage path
-STATE_FILE = "data/session_state.json"
 
 st.set_page_config(
     page_title="Course Schedule Builder",
@@ -19,16 +21,46 @@ st.set_page_config(
 )
 
 
-def get_manager() -> ScheduleSessionManager:
+def init_user_session() -> str:
+    """
+    Synchronizes the session ID with Streamlit's URL query parameters.
+    Reads 'session_id' from query parameters or generates a new random one,
+    appending it to the URL so the user can return to their session anytime.
+    """
+    query_sid = st.query_params.get("session_id")
+    if is_valid_session_id(query_sid):
+        session_id = query_sid
+    else:
+        session_id = generate_session_id()
+        st.query_params["session_id"] = session_id
+
+    # If the session_id changed in the URL or this is a fresh connection, reset session state
+    if st.session_state.get("current_session_id") != session_id:
+        st.session_state.current_session_id = session_id
+        if "session_manager" in st.session_state:
+            del st.session_state["session_manager"]
+        if "catalog_courses" in st.session_state:
+            del st.session_state["catalog_courses"]
+        if "computed_schedules" in st.session_state:
+            del st.session_state["computed_schedules"]
+        if "schedule_idx" in st.session_state:
+            st.session_state.schedule_idx = 0
+
+    return session_id
+
+
+def get_manager(session_id: str) -> ScheduleSessionManager:
     """
     Retrieves or initializes the ScheduleSessionManager from Streamlit session_state,
-    automatically loading persisted state from data/session_state.json on startup.
+    automatically loading persisted state from data/sessions/{session_id}/session_state.json.
+    Course catalogs remain shared in data/cache.
     """
     if "session_manager" not in st.session_state:
-        manager = ScheduleSessionManager(default_term="0009")
-        if os.path.exists(STATE_FILE):
+        manager = ScheduleSessionManager(cache_dir="data/cache", default_term="0009")
+        state_file = get_user_session_filepath(session_id)
+        if state_file.exists():
             try:
-                manager.load_session_state(STATE_FILE)
+                manager.load_session_state(str(state_file))
             except Exception as e:
                 st.sidebar.warning(f"Note: Could not restore previous state ({e})")
         st.session_state.session_manager = manager
@@ -37,10 +69,13 @@ def get_manager() -> ScheduleSessionManager:
 
 def save_state():
     """
-    Persists the current state of selections, excluded sections, and saved schedules to disk.
+    Persists the current state of selections, excluded sections, and saved schedules to disk
+    under the active user's session state file.
     """
-    if "session_manager" in st.session_state:
-        st.session_state.session_manager.save_session_state(STATE_FILE)
+    if "session_manager" in st.session_state and "current_session_id" in st.session_state:
+        session_id = st.session_state.current_session_id
+        state_file = get_user_session_filepath(session_id)
+        st.session_state.session_manager.save_session_state(str(state_file))
 
 
 @st.cache_data(show_spinner=False, ttl=1800)
@@ -151,12 +186,22 @@ def format_schedule_breakdown(schedule: Schedule) -> List[Dict[str, str]]:
     return rows
 
 
-# Initialize session manager
-manager = get_manager()
+# Initialize per-user session and session manager
+current_session_id = init_user_session()
+manager = get_manager(current_session_id)
 
 # Sidebar: Controls & Selected Courses List
 st.sidebar.title("Course Planner")
 st.sidebar.caption("University at Albany Schedule Generator")
+
+# Session & Share URL controls
+with st.sidebar.expander("🔗 Session & Unique URL", expanded=False):
+    st.write(f"**Session ID:** `{current_session_id}`")
+    st.caption("Your courses and schedules are tied to this URL session. Bookmark or share this link to return anytime.")
+    if st.button("🆕 Start Fresh Session", use_container_width=True, key="btn_fresh_session"):
+        new_sid = generate_session_id()
+        st.query_params["session_id"] = new_sid
+        st.rerun()
 
 # Semester Selection
 semesters = fetch_semesters()
@@ -286,7 +331,8 @@ with tab_catalog:
                         save_state()
                         st.rerun()
                 else:
-                    if btn_col.button(f"Add {course.course_id}", key=f"cat_add_{course.course_id}", type="primary"):
+                    can_add = len(manager.selected_courses) < manager.MAX_SELECTED_COURSES
+                    if btn_col.button(f"Add {course.course_id}", key=f"cat_add_{course.course_id}", type="primary", disabled=not can_add):
                         try:
                             manager.add_course(course)
                             save_state()
@@ -443,7 +489,14 @@ with tab_viewer:
                 if already_saved:
                     nav_save.button("⭐ Bookmarked", disabled=True, use_container_width=True, key="btn_bookmark_disabled")
                 else:
-                    if nav_save.button("💾 Bookmark Schedule", type="secondary", use_container_width=True, key="btn_bookmark_active"):
+                    can_save = len(saved_list) < manager.MAX_SAVED_SCHEDULES
+                    if nav_save.button(
+                        "💾 Bookmark Schedule",
+                        type="secondary",
+                        use_container_width=True,
+                        key="btn_bookmark_active",
+                        disabled=not can_save,
+                    ):
                         manager.save_schedule(current_schedule)
                         save_state()
                         st.toast(f"Schedule bookmarked to {selected_sem_name} Saved Schedules!")

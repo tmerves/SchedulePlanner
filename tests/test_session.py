@@ -1,7 +1,12 @@
 import os
 from pathlib import Path
 import pytest
-from core.session import ScheduleSessionManager
+from core.session import (
+    ScheduleSessionManager,
+    generate_session_id,
+    is_valid_session_id,
+    get_user_session_filepath,
+)
 from models.schema import Course, Section, Schedule
 from utils.time_utils import parse_time_blocks
 
@@ -447,5 +452,236 @@ def test_clear_courses_and_schedules_scoped_to_semester(mock_courses):
     manager.set_term("0007")
     assert len(manager.selected_courses) == 1
     assert "MATH101" in manager.selected_courses
+    assert len(manager.get_saved_schedules()) == 1
+
+
+
+
+def test_generate_session_id():
+    sid1 = generate_session_id()
+    sid2 = generate_session_id()
+    assert isinstance(sid1, str)
+    assert len(sid1) == 12
+    assert sid1 != sid2
+    assert is_valid_session_id(sid1)
+
+
+def test_is_valid_session_id():
+    assert is_valid_session_id("abc123def456") is True
+    assert is_valid_session_id("user_123-test") is True
+    assert is_valid_session_id("a1b2c3d4e5f6") is True
+
+    # Invalid cases
+    assert is_valid_session_id("") is False
+    assert is_valid_session_id(None) is False
+    assert is_valid_session_id("short") is False  # < 6 chars
+    assert is_valid_session_id("a" * 65) is False  # > 64 chars
+    assert is_valid_session_id("../traversal") is False
+    assert is_valid_session_id("..\\traversal") is False
+    assert is_valid_session_id("user/session") is False
+    assert is_valid_session_id("user session") is False
+    assert is_valid_session_id("user@session!") is False
+
+
+def test_get_user_session_filepath(tmp_path):
+    base_dir = tmp_path / "sessions"
+    sid = "abc123def456"
+    path = get_user_session_filepath(sid, base_dir=str(base_dir))
+    assert path == base_dir / sid / "session_state.json"
+
+    # Malicious IDs must raise ValueError
+    with pytest.raises(ValueError, match="Invalid session ID"):
+        get_user_session_filepath("../../etc/passwd", base_dir=str(base_dir))
+
+    with pytest.raises(ValueError, match="Invalid session ID"):
+        get_user_session_filepath("invalid sid with spaces", base_dir=str(base_dir))
+
+
+def test_per_user_session_isolation_with_shared_cache(tmp_path, mock_courses):
+    c1, c2 = mock_courses
+    shared_cache_dir = tmp_path / "shared_cache"
+    sessions_dir = tmp_path / "sessions"
+
+    user_a_sid = generate_session_id()
+    user_b_sid = generate_session_id()
+
+    user_a_file = get_user_session_filepath(user_a_sid, base_dir=str(sessions_dir))
+    user_b_file = get_user_session_filepath(user_b_sid, base_dir=str(sessions_dir))
+
+    # User A and User B managers pointing to shared cache
+    manager_a = ScheduleSessionManager(cache_dir=str(shared_cache_dir), default_term="0009")
+    manager_b = ScheduleSessionManager(cache_dir=str(shared_cache_dir), default_term="0009")
+
+    # 1. User A caches catalog data for 0009 ICSI
+    manager_a.cache_catalog("0009", "ICSI", [c1, c2])
+
+    # 2. User B can immediately access the shared catalog cache
+    cached_for_b = manager_b.get_cached_catalog("0009", "ICSI")
+    assert cached_for_b is not None
+    assert len(cached_for_b) == 2
+
+    # 3. User A selects course 1 and saves state
+    manager_a.add_course(c1)
+    manager_a.save_schedule(Schedule(sections=[c1.sections[0]]))
+    manager_a.save_session_state(str(user_a_file))
+
+    # 4. User B selects course 2 and saves state
+    manager_b.add_course(c2)
+    manager_b.save_schedule(Schedule(sections=[c2.sections[0]]))
+    manager_b.save_session_state(str(user_b_file))
+
+    # 5. Load fresh managers for each user to verify total isolation
+    fresh_manager_a = ScheduleSessionManager(cache_dir=str(shared_cache_dir), default_term="0009")
+    fresh_manager_a.load_session_state(str(user_a_file))
+
+    fresh_manager_b = ScheduleSessionManager(cache_dir=str(shared_cache_dir), default_term="0009")
+    fresh_manager_b.load_session_state(str(user_b_file))
+
+    # User A only has CS101
+    assert "CS101" in fresh_manager_a.selected_courses
+    assert "MATH101" not in fresh_manager_a.selected_courses
+    assert len(fresh_manager_a.get_saved_schedules()) == 1
+    assert fresh_manager_a.get_saved_schedules()[0].sections[0].course_id == "CS101"
+
+    # User B only has MATH101
+    assert "MATH101" in fresh_manager_b.selected_courses
+    assert "CS101" not in fresh_manager_b.selected_courses
+    assert len(fresh_manager_b.get_saved_schedules()) == 1
+    assert fresh_manager_b.get_saved_schedules()[0].sections[0].course_id == "MATH101"
+
+
+def test_max_selected_courses_limit():
+    manager = ScheduleSessionManager()
+    manager.set_term("0009")
+
+    # Add 15 courses
+    for i in range(1, 16):
+        c = Course(
+            course_id=f"COURSE{i:02d}",
+            title=f"Course {i}",
+            subject="SUBJ",
+            sections=[
+                Section(
+                    section_id=f"SEC{i:02d}",
+                    course_id=f"COURSE{i:02d}",
+                    instructor="Prof",
+                    meeting_times=parse_time_blocks("M", "09:00 - 10:00")
+                )
+            ]
+        )
+        manager.add_course(c)
+
+    assert len(manager.selected_courses) == 15
+    assert "COURSE15" in manager.selected_courses
+
+    # Attempt to add a 16th course
+    c16 = Course(
+        course_id="COURSE16",
+        title="Course 16",
+        subject="SUBJ",
+        sections=[
+            Section(
+                section_id="SEC16",
+                course_id="COURSE16",
+                instructor="Prof",
+                meeting_times=parse_time_blocks("M", "09:00 - 10:00")
+            )
+        ]
+    )
+    manager.add_course(c16)
+
+    # 16th course should be blocked
+    assert len(manager.selected_courses) == 15
+    assert "COURSE16" not in manager.selected_courses
+
+    # Updating an existing course should still work
+    c1_updated = Course(
+        course_id="COURSE01",
+        title="Course 1 Updated",
+        subject="SUBJ",
+        sections=[]
+    )
+    manager.add_course(c1_updated)
+    assert len(manager.selected_courses) == 15
+    assert manager.selected_courses["COURSE01"].title == "Course 1 Updated"
+
+    # Removing a course drops count to 14
+    manager.remove_course("COURSE01")
+    assert len(manager.selected_courses) == 14
+
+    # Now adding COURSE16 should succeed
+    manager.add_course(c16)
+    assert len(manager.selected_courses) == 15
+    assert "COURSE16" in manager.selected_courses
+
+    # Multi-semester isolation: another term can still add courses
+    manager.set_term("0007")
+    assert len(manager.selected_courses) == 0
+    c_spring = Course(
+        course_id="COURSE_SPRING",
+        title="Course Spring",
+        subject="SUBJ",
+        sections=[
+            Section(
+                section_id="SEC_SP",
+                course_id="COURSE_SPRING",
+                instructor="Prof",
+                meeting_times=parse_time_blocks("M", "09:00 - 10:00")
+            )
+        ]
+    )
+    manager.add_course(c_spring)
+    assert len(manager.selected_courses) == 1
+
+
+def test_max_saved_schedules_limit():
+    manager = ScheduleSessionManager()
+    manager.set_term("0009")
+
+    # Save 8 distinct schedules
+    for i in range(1, 9):
+        sec = Section(
+            section_id=f"SEC_{i}",
+            course_id=f"COURSE_{i}",
+            instructor="Prof",
+            meeting_times=parse_time_blocks("M", "09:00 - 10:00")
+        )
+        manager.save_schedule(Schedule(sections=[sec]))
+
+    assert len(manager.get_saved_schedules()) == 8
+
+    # Attempt to save a 9th distinct schedule
+    sec9 = Section(
+        section_id="SEC_9",
+        course_id="COURSE_9",
+        instructor="Prof",
+        meeting_times=parse_time_blocks("M", "09:00 - 10:00")
+    )
+    manager.save_schedule(Schedule(sections=[sec9]))
+
+    # 9th schedule should be blocked
+    assert len(manager.get_saved_schedules()) == 8
+    saved_ids = [s.sections[0].section_id for s in manager.get_saved_schedules()]
+    assert "SEC_9" not in saved_ids
+
+    # Remove one saved schedule -> drops count to 7
+    manager.remove_saved_schedule(0)
+    assert len(manager.get_saved_schedules()) == 7
+
+    # Now saving 9th schedule succeeds
+    manager.save_schedule(Schedule(sections=[sec9]))
+    assert len(manager.get_saved_schedules()) == 8
+    assert "SEC_9" in [s.sections[0].section_id for s in manager.get_saved_schedules()]
+
+    # Multi-semester isolation: another term can still save schedules
+    manager.set_term("0007")
+    assert len(manager.get_saved_schedules()) == 0
+    sec_sp = Section(
+        section_id="SEC_SP_1",
+        course_id="COURSE_SP_1",
+        instructor="Prof",
+        meeting_times=parse_time_blocks("M", "09:00 - 10:00")
+    )
+    manager.save_schedule(Schedule(sections=[sec_sp]))
     assert len(manager.get_saved_schedules()) == 1
 

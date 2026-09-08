@@ -1,12 +1,21 @@
 import json
 import os
+import re
+import secrets
 from pathlib import Path
 from typing import List, Set, Optional, Dict, Any
 from models.schema import Course, Section, Schedule
 from solver.permutator import ScheduleSolver
 
 
+MAX_SELECTED_COURSES: int = 15
+MAX_SAVED_SCHEDULES: int = 8
+
+
 class ScheduleSessionManager:
+    MAX_SELECTED_COURSES: int = MAX_SELECTED_COURSES
+    MAX_SAVED_SCHEDULES: int = MAX_SAVED_SCHEDULES
+
     def __init__(self, cache_dir: str = "data/cache", default_term: Optional[str] = None):
         """
         Initializes the session manager with distinct per-semester storage.
@@ -213,6 +222,7 @@ class ScheduleSessionManager:
         """
         Adds a course to the user's working selection for the given or active semester.
         Strictly prevents adding courses from one semester to another.
+        Limits the number of selected courses per semester to MAX_SELECTED_COURSES (15).
         """
         target_term = term_code or self._active_term_code
         self._ensure_term_exists(target_term)
@@ -223,6 +233,11 @@ class ScheduleSessionManager:
                 f"Cannot add course '{course.course_id}' from semester '{course.term_code}' "
                 f"to semester '{target_term}'."
             )
+
+        # Course limit check: block addition if limit reached and course is not already selected
+        if course.course_id not in self._semesters[target_term]["selected_courses"]:
+            if len(self._semesters[target_term]["selected_courses"]) >= self.MAX_SELECTED_COURSES:
+                return
 
         # Assign semester term_code if not already set
         if course.term_code is None and target_term != "default":
@@ -303,6 +318,7 @@ class ScheduleSessionManager:
         """
         Saves a generated Schedule to the user's saved list for the given or active semester.
         Strictly prevents saving schedules from one semester to another.
+        Limits the number of saved schedules per semester to MAX_SAVED_SCHEDULES (8).
         """
         target_term = term_code or self._active_term_code
         self._ensure_term_exists(target_term)
@@ -321,6 +337,11 @@ class ScheduleSessionManager:
             saved_sec_ids = {sec.section_id for sec in saved.sections}
             if new_sec_ids == saved_sec_ids:
                 return  # Duplicate schedule already saved
+
+        # Saved schedules limit check: block saving if limit reached
+        if len(saved_list) >= self.MAX_SAVED_SCHEDULES:
+            return
+
         saved_list.append(schedule)
 
     def remove_saved_schedule(self, index: int, term_code: Optional[str] = None) -> None:
@@ -463,3 +484,38 @@ class ScheduleSessionManager:
                         self.load_semester_state(str(sem_file), term_code=term)
                     except Exception:
                         pass
+
+
+# ----------------------------------------------------------------------
+# Session ID & Per-User Storage Helpers
+# ----------------------------------------------------------------------
+
+SESSION_ID_REGEX = re.compile(r"^[a-zA-Z0-9_-]{6,64}$")
+
+
+def generate_session_id(length: int = 12) -> str:
+    """
+    Generates a secure, URL-safe random alphanumeric session ID.
+    Default length is 12 hex characters.
+    """
+    return secrets.token_hex(max(3, length // 2))
+
+
+def is_valid_session_id(session_id: Optional[str]) -> bool:
+    """
+    Validates that a session_id is a safe alphanumeric string without path traversal risks.
+    """
+    if not session_id or not isinstance(session_id, str):
+        return False
+    return bool(SESSION_ID_REGEX.match(session_id))
+
+
+def get_user_session_filepath(session_id: str, base_dir: str = "data/sessions") -> Path:
+    """
+    Resolves the filesystem path for a user's isolated session state.
+    Raises ValueError if session_id contains invalid or traversal characters.
+    """
+    if not is_valid_session_id(session_id):
+        raise ValueError(f"Invalid session ID: {session_id!r}")
+    return Path(base_dir) / session_id / "session_state.json"
+

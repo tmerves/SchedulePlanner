@@ -20,8 +20,9 @@ University Portal (Web/HTML)
 [Session & Multi-Semester Manager: core/session.py]
   - Manages active semester and partitions state by term_code
   - Tracks user-selected courses, section exclusions, and bookmarked schedules
-  - Persists multi-semester state to data/session_state.json & data/semesters/{term_code}.json
+  - Persists per-user multi-semester state to data/sessions/{session_id}/session_state.json
   - Enforces cross-semester data integrity guards
+  - Generates safe session IDs and validates against directory traversal attacks
         │
         ▼
 [Permutator & Collision Engine: solver/permutator.py & utils/time_utils.py]
@@ -33,6 +34,7 @@ University Portal (Web/HTML)
         ▼
 [Presentation & Visual Layer: app.py & utils/visualizer.py]
   - Streamlit multi-tab web application (Catalog, Filter Checklist, Permutator Viewer, Saved Explorer)
+  - Per-user unique URL parameter synchronization (?session_id=...)
   - Coordinate-based Plotly weekly calendar with pastel blocks, location tags, and rich tooltips
 ```
 
@@ -49,13 +51,15 @@ University Portal (Web/HTML)
 
 ### 2. Session State & Multi-Semester Isolation (`core/session.py`)
 * **State Management:** `ScheduleSessionManager` encapsulates all active user state.
+* **Per-User Session Isolation:**
+  * Unique session IDs are generated (`generate_session_id`) and validated (`is_valid_session_id`) against path traversal.
+  * User states are persisted to isolated paths: `data/sessions/{session_id}/session_state.json` and per-semester snapshots in `data/sessions/{session_id}/semesters/{term_code}.json`.
+* **Shared Catalog Cache:** Course catalogs scraped across subjects are stored centrally in `data/cache/{term_code}_{subject_code}.json` and shared across all user sessions.
 * **Per-Semester Isolation:** Courses, section exclusions, and saved schedules are strictly segregated by `term_code` in `_semesters: Dict[str, Dict[str, Any]]`.
+* **Capacity Limits:** Limits selections to 15 courses (`MAX_SELECTED_COURSES = 15`) and bookmarked schedules to 8 (`MAX_SAVED_SCHEDULES = 8`) per semester. UI buttons are disabled when thresholds are reached to cleanly block overflow without exposing limit text.
 * **Cross-Semester Guards:** Prevents accidental mixing of courses across semesters and disallows bookmarking schedules into incompatible semesters.
 * **Solver Pre-Filtering:** `get_active_courses(term_code)` filters out excluded sections and prepares clean `Course` bundles for permutation solving.
-* **Dual-Level Disk Persistence:**
-  * Root file `data/session_state.json` stores active semester metadata and all distinct semester state dictionaries.
-  * Dedicated per-semester snapshot files are saved to `data/semesters/{term_code}.json`.
-  * Fully backward-compatible: transparently migrates legacy flat session files.
+* **Decoupled Architecture:** The session ID is strictly used for URL synchronization and disk path routing; domain models, permutator algorithms, and visualizers remain completely headless and session-agnostic.
 
 ### 3. Permutation Solver & Collision Engine (`solver/permutator.py`, `utils/time_utils.py`)
 * **Collision Detection:** `utils/time_utils.py` converts time strings to minutes-from-midnight integers and performs interval intersection checks (`is_time_conflict`, `do_sections_conflict`).
@@ -67,7 +71,8 @@ University Portal (Web/HTML)
 
 ### 4. Presentation & Visualization Layer (`app.py`, `utils/visualizer.py`)
 * **Streamlit Application (`app.py`):**
-  * **Sidebar:** Dynamic semester dropdown and searchable multi-subject picker. Switching semesters synchronizes active term and resets computed permutations.
+  * **Per-User URL Synchronization:** Synchronizes `st.query_params["session_id"]` with user sessions, generating random unique IDs on initial visit and enabling session recovery on return.
+  * **Sidebar:** Dynamic semester dropdown and searchable multi-subject picker. Includes Session & Unique URL section with quick session ID copy and fresh session initialization. Switching semesters synchronizes active term and resets computed permutations.
   * **Tab 1: 🔍 Catalog Browser:** Searchable course list, showing section counts, instructors, locations, and nested linked discussions (`get_organized_course_sections`).
   * **Tab 2: ⚙️ Section Filter Checklist:** Per-course section checkboxes with indented discussion sections, plus bulk "Select All" and "Deselect All" controls.
   * **Tab 3: 🗓️ Schedule Permutator Viewer:** Solves valid schedules, provides navigation pagination and jump slider, displays bookmarked status, renders the Plotly calendar, and presents hierarchical breakdown tables.
