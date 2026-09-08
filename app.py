@@ -1,9 +1,13 @@
 import os
+import importlib
 from typing import Dict, List, Optional
 import streamlit as st
 import pandas as pd
 from models.schema import Course, Section, Schedule
 from scraper.client import ScraperClient
+import core.session
+if not hasattr(core.session, "generate_session_id"):
+    importlib.reload(core.session)
 from core.session import (
     ScheduleSessionManager,
     generate_session_id,
