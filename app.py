@@ -201,7 +201,7 @@ st.sidebar.caption("University at Albany Schedule Generator")
 # Session & Share URL controls
 with st.sidebar.expander("🔗 Session & Unique URL", expanded=False):
     st.write(f"**Session ID:** `{current_session_id}`")
-    st.caption("Your courses and schedules are tied to this URL session. Bookmark or share this link to return anytime.")
+    st.caption("Your courses and schedules are tied to this URL session. Bookmark to return, but sessions expire after 24 hours of inactivity.")
     if st.button("🆕 Start Fresh Session", use_container_width=True, key="btn_fresh_session"):
         new_sid = generate_session_id()
         st.query_params["session_id"] = new_sid
@@ -231,7 +231,8 @@ selected_subject_labels = st.sidebar.multiselect(
     "Academic Subjects",
     options=list(subject_map.keys()),
     default=[],
-    help="Select one or more subjects to query courses for."
+    help="Select one or more subjects to query courses for.",
+    select_all=False,
 )
 selected_subject_codes = [subject_map[lbl] for lbl in selected_subject_labels]
 
