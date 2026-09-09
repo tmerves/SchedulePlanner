@@ -226,12 +226,11 @@ if manager.active_term_code != selected_term_code:
 
 # Subject Selection
 subjects = fetch_subjects(selected_term_code)
-subject_map = {f"{s['code']} - {s['label']}": s["code"] for s in subjects} if subjects else {"BACC - Accounting": "BACC"}
-default_selection = [list(subject_map.keys())[0]] if subject_map else []
+subject_map = {f"{s['code']} - {s['label']}": s["code"] for s in subjects} if subjects else {}
 selected_subject_labels = st.sidebar.multiselect(
     "Academic Subjects",
     options=list(subject_map.keys()),
-    default=default_selection,
+    default=[],
     help="Select one or more subjects to query courses for."
 )
 selected_subject_codes = [subject_map[lbl] for lbl in selected_subject_labels]
