@@ -168,7 +168,7 @@ def extract_linked_sections(comment: str) -> List[str]:
         return []
     linked = []
     m = re.search(
-        r'(?:Discussion|DISC|Lab|LAB)(?:\s+section|\s+sections)?[:\s]+([0-9\s,or\-]+)',
+        r'(?:Discussion|DISC|DIS|Lab|LAB)s?(?:\s+(?:sections?|from))*[:\s]+(?:from[:\s]+)?((?:\d{4,5}(?:\s*-\s*\d{4,5})?(?:,\s*|\s*[/,]\s*|\s+or\s+|\s+and\s+|\s*-\s*|\s+)?)+)',
         comment,
         re.IGNORECASE
     )

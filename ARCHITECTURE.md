@@ -40,7 +40,7 @@ University Portal (Web/HTML)
 
 ### 1. Dynamic University Scraper Engine (`scraper/client.py`, `scraper/parser.py`)
 * **Inputs:** Target university registrar search endpoint (`search.pl`), academic semester code, and academic subject.
-* **Dynamic Options:** Scrapes active semesters and departments dynamically (`get_available_semesters`, `get_available_subjects`) with static fallbacks for offline resilience.
+* **Dynamic Options:** Scrapes active semesters and departments dynamically (`get_available_semesters`, `get_available_subjects`) from live registrar endpoints with graceful error fallback handling (returning empty lists on network/service failure).
 * **Field Parsing:**
   * Extracts meeting days and parses time spans into validated `TimeBlock` lists.
   * Separates physical classroom locations from instructor names (`_parse_location_and_instructor`), robustly handling room numbers with digits, generational suffixes (e.g. `II`, `Jr.`), compound surnames (e.g. `Van Horn`, `De La Cruz`), and non-classroom keywords (`Online`, `Arranged`, `Off Campus`).

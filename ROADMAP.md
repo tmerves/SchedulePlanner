@@ -52,8 +52,8 @@
   - In `scraper/client.py`:
     - Base HTTP client with headers modeled after browser requests (`User-Agent`, `Referer`, `Origin`).
     - `fetch_search_page(term)`: Retrieves registrar landing page.
-    - `get_available_semesters() -> list[dict]`: Scrapes active terms dynamically with static fallback (`AVAILABLE_SEMESTERS`).
-    - `get_available_subjects(term) -> list[dict]`: Scrapes active departments dynamically with static fallback (`AVAILABLE_SUBJECTS`).
+    - `get_available_semesters() -> list[dict]`: Scrapes active terms dynamically with error fallback handling.
+    - `get_available_subjects(term) -> list[dict]`: Scrapes active departments dynamically with error fallback handling.
     - `fetch_courses(subject, term) -> list[Course]`: Form payload POST query returning parsed course models.
     - `fetch_multiple_courses(subjects, term) -> list[Course]`: Batch fetch across multiple departments.
   - In `scraper/parser.py`:
@@ -93,7 +93,7 @@
     - Added packages to `requirements.txt`.
   - **Task 5.2: Enhance Scraper Client with Dynamic Endpoints**
     - In `scraper/client.py`, implemented `fetch_search_page()` to query `https://www.albany.edu/registrar/schedule-classes`.
-    - Implemented `get_available_semesters()` and `get_available_subjects()` with automatic fallback for offline resilience.
+    - Implemented `get_available_semesters()` and `get_available_subjects()` with automatic error fallback handling.
     - Added `fetch_multiple_courses()` for multi-subject catalog aggregation.
   - **Task 5.3: Build Isolated Visualizer Module**
     - In `utils/visualizer.py`, created coordinate-based schedule visualizer:

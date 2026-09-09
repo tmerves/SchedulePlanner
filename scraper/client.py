@@ -1,13 +1,16 @@
 import httpx
+import logging
 from typing import List, Optional, Dict
 from models.schema import Course
 from scraper.parser import parse_courses, parse_semesters, parse_subjects
-from scraper.constants import AVAILABLE_SEMESTERS, AVAILABLE_SUBJECTS
+
+logger = logging.getLogger(__name__)
 
 class ScraperClient:
     """
     A university schedule scraper client that sends a POST request with parameters modeled from
     request_info.md, allowing dynamic subject and term substitution, and returning a list of parsed Course models.
+    Requires an active internet connection.
     """
     def __init__(self, term: str = "0009", base_url: str = "https://www.albany.edu/cgi-bin/general-search/search.pl"):
         self.term = term
@@ -18,7 +21,7 @@ class ScraperClient:
             "Referer": "https://www.albany.edu/registrar/schedule-classes",
             "Origin": "https://www.albany.edu",
         }
-        self.client = httpx.Client(headers=headers)
+        self.client = httpx.Client(headers=headers, timeout=15.0)
 
     def fetch_search_page(self, term: Optional[str] = None) -> str:
         """Fetches the main schedule classes HTML page to extract available semesters and subjects."""
@@ -30,30 +33,30 @@ class ScraperClient:
     def get_available_semesters(self) -> List[Dict[str, str]]:
         """
         Dynamically fetches available semesters from the university website.
-        Falls back to AVAILABLE_SEMESTERS if offline or on network error.
+        Returns an empty list if a network error or parsing failure occurs.
         """
         try:
             html = self.fetch_search_page()
             semesters = parse_semesters(html)
             if semesters:
                 return semesters
-        except Exception:
-            pass
-        return list(AVAILABLE_SEMESTERS)
+        except Exception as e:
+            logger.warning("Failed to fetch available semesters: %s", e)
+        return []
 
     def get_available_subjects(self, term: Optional[str] = None) -> List[Dict[str, str]]:
         """
         Dynamically fetches available academic subjects from the university website.
-        Falls back to AVAILABLE_SUBJECTS if offline or on network error.
+        Returns an empty list if a network error or parsing failure occurs.
         """
         try:
             html = self.fetch_search_page(term=term)
             subjects = parse_subjects(html)
             if subjects:
                 return subjects
-        except Exception:
-            pass
-        return list(AVAILABLE_SUBJECTS)
+        except Exception as e:
+            logger.warning("Failed to fetch available subjects: %s", e)
+        return []
 
     def fetch_courses(self, subject: str, term: Optional[str] = None) -> List[Course]:
         """

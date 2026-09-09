@@ -117,16 +117,16 @@ def test_client_get_available_semesters_and_subjects(search_page_html):
 
     client.close()
 
-def test_client_fallback_on_network_error():
+def test_client_error_handling_on_network_error():
     client = ScraperClient(term="0009")
     client.client.get = MagicMock(side_effect=Exception("Connection refused"))
 
-    # Fallback should return default constants instead of raising
+    # When network error occurs, methods must catch exceptions and gracefully return empty lists
     semesters = client.get_available_semesters()
-    assert len(semesters) > 0
+    assert semesters == []
 
     subjects = client.get_available_subjects()
-    assert len(subjects) > 0
+    assert subjects == []
 
     client.close()
 
@@ -176,6 +176,9 @@ def test_extract_linked_sections_patterns():
 
     c4 = "No special restrictions"
     assert extract_linked_sections(c4) == []
+
+    c5 = "Comments: Students Registering For This Section Must FIRST Register For One Disc From: 2607 - 2610, 2612, 3240, 3241 Students who do not advance register for this course cannot be given consideration for a permission number if the course closes."
+    assert extract_linked_sections(c5) == ["2607", "2608", "2609", "2610", "2612", "3240", "3241"]
 
 
 

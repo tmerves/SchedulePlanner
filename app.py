@@ -209,40 +209,52 @@ with st.sidebar.expander("🔗 Session & Unique URL", expanded=False):
 
 # Semester Selection
 semesters = fetch_semesters()
-semester_options = {s["name"]: s["value"] for s in semesters} if semesters else {"Fall 2026": "0009"}
-selected_sem_name = st.sidebar.selectbox("Academic Semester", list(semester_options.keys()), index=0)
-selected_term_code = semester_options[selected_sem_name]
+if not semesters:
+    st.sidebar.error("⚠️ Connection error: Unable to load academic semesters from registrar. An active internet connection is required to fetch course schedules.")
+    semester_options = {}
+    selected_sem_name = ""
+    selected_term_code = None
+else:
+    semester_options = {s["name"]: s["value"] for s in semesters}
+    selected_sem_name = st.sidebar.selectbox("Academic Semester", list(semester_options.keys()), index=0)
+    selected_term_code = semester_options[selected_sem_name]
 
 # Synchronize manager's active semester and isolate catalog/schedules per semester
-if manager.active_term_code != selected_term_code:
-    manager.set_term(selected_term_code)
-    if st.session_state.get("catalog_term") != selected_term_code:
-        st.session_state.catalog_courses = []
-        st.session_state.catalog_term = selected_term_code
-    if "computed_schedules" in st.session_state:
-        del st.session_state["computed_schedules"]
-    if "schedule_idx" in st.session_state:
-        st.session_state.schedule_idx = 0
+if selected_term_code:
+    if manager.active_term_code != selected_term_code:
+        manager.set_term(selected_term_code)
+        if st.session_state.get("catalog_term") != selected_term_code:
+            st.session_state.catalog_courses = []
+            st.session_state.catalog_term = selected_term_code
+        if "computed_schedules" in st.session_state:
+            del st.session_state["computed_schedules"]
+        if "schedule_idx" in st.session_state:
+            st.session_state.schedule_idx = 0
 
-# Subject Selection
-subjects = fetch_subjects(selected_term_code)
-subject_map = {f"{s['code']} - {s['label']}": s["code"] for s in subjects} if subjects else {}
-selected_subject_labels = st.sidebar.multiselect(
-    "Academic Subjects",
-    options=list(subject_map.keys()),
-    default=[],
-    help="Select one or more subjects to query courses for.",
-    select_all=False,
-)
-selected_subject_codes = [subject_map[lbl] for lbl in selected_subject_labels]
+    # Subject Selection
+    subjects = fetch_subjects(selected_term_code)
+    if not subjects:
+        st.sidebar.warning("⚠️ Could not load subjects for the selected semester. Please check your connection or retry.")
+    subject_map = {f"{s['code']} - {s['label']}": s["code"] for s in subjects} if subjects else {}
+    selected_subject_labels = st.sidebar.multiselect(
+        "Academic Subjects",
+        options=list(subject_map.keys()),
+        default=[],
+        help="Select one or more subjects to query courses for.",
+        select_all=False,
+    )
+    selected_subject_codes = [subject_map[lbl] for lbl in selected_subject_labels]
+else:
+    selected_subject_codes = []
 
 # Fetch Catalog Action
-if st.sidebar.button("📥 Fetch Course Catalog", type="primary", use_container_width=True):
+if st.sidebar.button("📥 Fetch Course Catalog", type="primary", use_container_width=True, disabled=not selected_term_code):
     if not selected_subject_codes:
         st.sidebar.warning("Please select at least one subject first.")
     else:
         with st.spinner(f"Loading courses for {len(selected_subject_codes)} subject(s)..."):
             combined_courses: List[Course] = []
+            fetch_errors: List[str] = []
             with ScraperClient(term=selected_term_code) as client:
                 for code in selected_subject_codes:
                     # Check disk cache first
@@ -255,18 +267,25 @@ if st.sidebar.button("📥 Fetch Course Catalog", type="primary", use_container_
                             if courses:
                                 manager.cache_catalog(selected_term_code, code, courses)
                                 combined_courses.extend(courses)
+                            else:
+                                fetch_errors.append(f"{code}: no courses returned")
                         except Exception as e:
-                            st.sidebar.error(f"Error fetching {code}: {e}")
+                            fetch_errors.append(f"{code}: {e}")
+            if fetch_errors:
+                for err in fetch_errors:
+                    st.sidebar.error(f"⚠️ Error fetching {err}")
             st.session_state.catalog_courses = combined_courses
             st.session_state.catalog_term = selected_term_code
-            st.sidebar.success(f"Loaded {len(combined_courses)} courses!")
+            if combined_courses:
+                st.sidebar.success(f"Loaded {len(combined_courses)} courses!")
 
 # Sidebar: Selected Courses List
+display_sem_name = selected_sem_name if selected_sem_name else "Active Semester"
 st.sidebar.markdown("---")
-st.sidebar.subheader(f"📋 Selected Courses for {selected_sem_name} ({len(manager.selected_courses)})")
+st.sidebar.subheader(f"📋 Selected Courses for {display_sem_name} ({len(manager.selected_courses)})")
 
 if manager.selected_courses:
-    if st.sidebar.button(f"Clear All ({selected_sem_name})", use_container_width=True):
+    if st.sidebar.button(f"Clear All ({display_sem_name})", use_container_width=True):
         manager.clear_courses()
         save_state()
         st.rerun()
@@ -279,7 +298,7 @@ if manager.selected_courses:
             save_state()
             st.rerun()
 else:
-    st.sidebar.info(f"No courses selected for {selected_sem_name}. Search and add courses in **🔍 Catalog Browser**.")
+    st.sidebar.info(f"No courses selected for {display_sem_name}. Search and add courses in **🔍 Catalog Browser**.")
 
 
 
@@ -295,7 +314,7 @@ tab_catalog, tab_filters, tab_viewer, tab_saved = st.tabs([
 # CATALOG BROWSER
 # ----------------------------------------------------------------------
 with tab_catalog:
-    st.header(f"Search & Add Courses — {selected_sem_name}")
+    st.header(f"Search & Add Courses — {display_sem_name}")
     # Verify catalog matches active term
     catalog_term = st.session_state.get("catalog_term")
     if catalog_term != selected_term_code:
@@ -304,7 +323,7 @@ with tab_catalog:
         catalog_courses = st.session_state.get("catalog_courses", [])
 
     if not catalog_courses and not manager.selected_courses:
-        st.info(f"👈 Choose subjects in the sidebar, then click **'Fetch Course Catalog'** to load courses for {selected_sem_name}.")
+        st.info(f"👈 Choose subjects in the sidebar, then click **'Fetch Course Catalog'** to load courses for {display_sem_name}.")
     else:
         # Search / filter bar
         search_query = st.text_input(
