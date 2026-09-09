@@ -125,19 +125,27 @@
 
 ---
 
-## Phase 6: Polish, Export & Preferences [PENDING / NEXT UP]
-**Goal:** Add user scheduling constraints, preference-based ranking, and export formats.
+## Phase 6: External Request Throttling & Process-Wide Rate Limiting [COMPLETED]
+**Goal:** Implement a thread-safe, process-wide rate limiter that coordinates all concurrent Streamlit sessions hitting the university registrar website, preventing concurrent request flooding, server overload, and IP-level bans.
 
-* **Planned Tasks:**
-  - **Solver Constraints & Preferences:**
-    - Avoid early mornings (e.g., "No classes before 9:30 AM").
-    - Avoid Friday classes.
-    - Maximize/minimize time gaps between classes (compact schedules vs. study breaks).
-    - Instructor preference filters.
-  - **Schedule Export Formats:**
-    - Download schedule as `.ics` (iCalendar format importable into Google Calendar, Apple Calendar, Outlook).
-    - Export schedule summary as PNG image or formatted Markdown / PDF summary table.
-  - **UI Controls:**
-    - Add preferences section in `app.py` before running solver.
-    - Add download buttons in Schedule Permutator Viewer and Saved Schedules Explorer.
-* **Acceptance Criteria:** Valid schedules can be filtered by user preferences and downloaded as `.ics` calendar files.
+* **Implemented Tasks:**
+  - **Task 6.1: Process-Wide Token Bucket Coordinator**
+    - Created `scraper/rate_limiter.py` with `ProcessRateLimiter` implementing a token bucket algorithm with slot reservations under a threading lock.
+    - Configurable maximum request rate (`SCRAPER_REQUESTS_PER_SECOND`, default 2.0 req/s) and burst capacity (`SCRAPER_BURST_CAPACITY`, default 2).
+    - Randomized jitter delays (`SCRAPER_JITTER_MIN` to `SCRAPER_JITTER_MAX`, default 0.05s–0.2s) preventing synchronized thundering herds across Streamlit worker threads.
+  - **Task 6.2: Target-Side 429 & 503 Handling with Exponential Backoff**
+    - Parses RFC 7231 / RFC 9110 `Retry-After` headers (numeric seconds or HTTP-date).
+    - Triggers a process-wide cooldown window blocking all threads on `429 Too Many Requests` or `503 Service Unavailable`.
+    - Implemented exponential backoff with consecutive error tracking and reset on HTTP success.
+  - **Task 6.3: Scraper Client Integration**
+    - Updated `ScraperClient` in `scraper/client.py` to route all external GET and POST requests through `_send_request_with_retry`.
+    - Integrated with a shared singleton `get_global_rate_limiter()` so separate client instances across concurrent Streamlit sessions coordinate automatically.
+  - **Task 6.4: Multi-Process & Distributed Coordinator Design**
+    - Implemented `RedisRateLimiter` using atomic Redis Lua scripts and TTL-based cooldown keys for multi-replica container deployments.
+  - **Task 6.5: Automated Testing Without Live Network Traffic**
+    - Implemented `tests/test_rate_limiter.py` with 14 comprehensive tests verifying token pacing, concurrent thread coordination, jitter, 429/503 backoff retries, retry exhaustion, and Redis coordinator operations using mocks.
+* **Acceptance Criteria & Status:** Complete.
+  - Rate limiter coordinates all worker threads and sessions process-wide.
+  - Target server is safeguarded with configurable rate limits, jitter, and backoff cooldowns.
+  - `pytest tests/test_rate_limiter.py` and entire test suite (76 tests) pass 100%.
+---
