@@ -40,8 +40,13 @@ class ScheduleSolver:
             if sec.section_id not in available_map:
                 continue
 
-            if sec.linked_sections:
-                for l_id in sec.linked_sections:
+            valid_linked_ids = [
+                l_id for l_id in sec.linked_sections 
+                if any(s.section_id == l_id for s in course.sections)
+            ]
+
+            if valid_linked_ids:
+                for l_id in valid_linked_ids:
                     if l_id in available_map:
                         linked_sec = available_map[l_id]
                         if not do_sections_conflict(sec, linked_sec):

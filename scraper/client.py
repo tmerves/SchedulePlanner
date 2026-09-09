@@ -33,30 +33,18 @@ class ScraperClient:
     def get_available_semesters(self) -> List[Dict[str, str]]:
         """
         Dynamically fetches available semesters from the university website.
-        Returns an empty list if a network error or parsing failure occurs.
         """
-        try:
-            html = self.fetch_search_page()
-            semesters = parse_semesters(html)
-            if semesters:
-                return semesters
-        except Exception as e:
-            logger.warning("Failed to fetch available semesters: %s", e)
-        return []
+        html = self.fetch_search_page()
+        semesters = parse_semesters(html)
+        return semesters if semesters else []
 
     def get_available_subjects(self, term: Optional[str] = None) -> List[Dict[str, str]]:
         """
         Dynamically fetches available academic subjects from the university website.
-        Returns an empty list if a network error or parsing failure occurs.
         """
-        try:
-            html = self.fetch_search_page(term=term)
-            subjects = parse_subjects(html)
-            if subjects:
-                return subjects
-        except Exception as e:
-            logger.warning("Failed to fetch available subjects: %s", e)
-        return []
+        html = self.fetch_search_page(term=term)
+        subjects = parse_subjects(html)
+        return subjects if subjects else []
 
     def fetch_courses(self, subject: str, term: Optional[str] = None) -> List[Course]:
         """
@@ -146,19 +134,6 @@ class ScraperClient:
         response.raise_for_status()
         
         return parse_courses(response.text, subject, term=term_to_use)
-
-    def fetch_multiple_courses(self, subjects: List[str], term: Optional[str] = None) -> List[Course]:
-        """
-        Dynamically fetches and aggregates courses across multiple academic subjects.
-        """
-        aggregated: List[Course] = []
-        for subject in subjects:
-            try:
-                courses = self.fetch_courses(subject=subject, term=term)
-                aggregated.extend(courses)
-            except Exception:
-                pass
-        return aggregated
 
     def __enter__(self):
         return self

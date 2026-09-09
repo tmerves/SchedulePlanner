@@ -121,26 +121,15 @@ def test_client_error_handling_on_network_error():
     client = ScraperClient(term="0009")
     client.client.get = MagicMock(side_effect=Exception("Connection refused"))
 
-    # When network error occurs, methods must catch exceptions and gracefully return empty lists
-    semesters = client.get_available_semesters()
-    assert semesters == []
+    # When network error occurs, methods must NOT catch exceptions 
+    # to prevent Streamlit from caching silent empty list failures.
+    import pytest
+    with pytest.raises(Exception, match="Connection refused"):
+        client.get_available_semesters()
 
-    subjects = client.get_available_subjects()
-    assert subjects == []
+    with pytest.raises(Exception, match="Connection refused"):
+        client.get_available_subjects()
 
-    client.close()
-
-
-def test_client_fetch_multiple_courses(search_results_html):
-    client = ScraperClient(term="0009")
-    mock_response = MagicMock()
-    mock_response.text = search_results_html
-    mock_response.raise_for_status = MagicMock()
-    client.client.post = MagicMock(return_value=mock_response)
-
-    courses = client.fetch_multiple_courses(["BACC", "ICSI"])
-    assert len(courses) > 0
-    assert client.client.post.call_count == 2
     client.close()
 
 
