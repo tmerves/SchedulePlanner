@@ -1,0 +1,63 @@
+name: prune-sessions
+
+# Copy this file to .github/workflows/prune.yml in the PRIVATE session data repo,
+# together with tools/prune_sessions.py from the app repo (save it as prune_sessions.py
+# at the root of the data repo). See deploy/session-data-repo/README.md.
+
+on:
+  schedule:
+    - cron: "17 */6 * * *"   # every 6 hours, 4 runs per day
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: "emergency also deletes the 15 least recently active sessions"
+        type: choice
+        options: [scheduled, emergency]
+        default: scheduled
+
+# Runs never overlap, and a dispatch queues behind a running job instead of cancelling it
+concurrency:
+  group: prune-sessions
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+
+jobs:
+  prune:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Delete expired sessions
+        id: prune
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          SIZE_KB=$(gh api "repos/${{ github.repository }}" --jq .size)
+          python prune_sessions.py \
+            --sessions-dir sessions \
+            --mode "${{ inputs.mode || 'scheduled' }}" \
+            --size-mb "$((SIZE_KB / 1024))"
+
+      # Deleting files does not shrink git history, so only when something was deleted
+      # rewrite history to a single commit. The lease makes the push fail instead of
+      # overwriting a session the app saved while this job was running; the next run retries.
+      - name: Squash history
+        if: steps.prune.outputs.deleted_count != '0'
+        run: |
+          BASE=$(git rev-parse HEAD)
+          BRANCH="${{ github.ref_name }}"
+          git config user.name "session-prune"
+          git config user.email "session-prune@users.noreply.github.com"
+          git checkout --orphan squashed
+          git add -A
+          git commit -m "Prune sessions and squash history"
+          git push --force-with-lease="$BRANCH:$BASE" origin "squashed:$BRANCH"
