@@ -158,6 +158,7 @@ class GitHubStore:
         }
 
         self._cv = threading.Condition()
+        self._io_lock = threading.Lock()  # one remote write at a time (writer thread vs flush_all)
         self._pending: Dict[str, dict] = {}
         self._last_write: Dict[str, float] = {}
         self._last_global = float("-inf")
@@ -313,31 +314,44 @@ class GitHubStore:
     def quarantine(self, session_id: str) -> Optional[Path]:
         return self.local.quarantine(session_id)
 
-    def delete(self, session_id: str) -> None:
+    def delete(self, session_id: str) -> bool:
+        """Removes the session locally and remotely. Returns True when the remote copy is gone."""
         self.local.delete(session_id)
         with self._cv:
             self._pending.pop(session_id, None)
             self._pending_hash.pop(session_id, None)
         now = self._clock()
         if self._breaker_open(now):
-            return
+            return False
         try:
-            sha = self._sha.get(session_id)
-            if not sha:
-                lookup = self._client.get(self._url(session_id), params={"ref": self.branch}, headers=self._headers)
-                if lookup.status_code != 200:
-                    return
-                sha = lookup.json().get("sha")
-            self._client.request(
-                "DELETE",
-                self._url(session_id),
-                headers=self._headers,
-                json={"message": f"delete session {session_id}", "sha": sha, "branch": self.branch},
-            )
+            with self._io_lock:
+                sha = self._sha.get(session_id)
+                if not sha:
+                    lookup = self._client.get(
+                        self._url(session_id), params={"ref": self.branch}, headers=self._headers
+                    )
+                    if lookup.status_code == 404:
+                        return True
+                    if lookup.status_code != 200:
+                        self._record_failure(now, self._retry_after(lookup))
+                        return False
+                    sha = lookup.json().get("sha")
+                response = self._client.request(
+                    "DELETE",
+                    self._url(session_id),
+                    headers=self._headers,
+                    json={"message": f"delete session {session_id}", "sha": sha, "branch": self.branch},
+                )
+        except (httpx.HTTPError, ValueError) as exc:
+            logger.warning("Session delete failed: %s", exc)
+            self._record_failure(now)
+            return False
+        if response.status_code in (200, 204, 404):
             self._sha.pop(session_id, None)
             self._synced_hash.pop(session_id, None)
-        except httpx.HTTPError as exc:
-            logger.warning("Session delete failed: %s", exc)
+            return True
+        self._record_failure(now, self._retry_after(response))
+        return False
 
     def _due_time(self, session_id: str) -> float:
         return max(
@@ -384,7 +398,10 @@ class GitHubStore:
         return 1
 
     def flush_all(self) -> None:
-        """Best-effort write of everything pending (used at interpreter exit). Respects the breaker."""
+        """
+        Best-effort write of everything pending (used at interpreter exit). Respects the breaker.
+        A session stays queued until its write succeeds, so a failure never drops the state.
+        """
         with self._cv:
             self._stopped = True
             self._cv.notify_all()
@@ -395,15 +412,20 @@ class GitHubStore:
             if not pending or self._breaker_open(self._clock()):
                 return
             for session_id, state in pending:
-                with self._cv:
-                    self._pending.pop(session_id, None)
-                    digest = self._pending_hash.pop(session_id, state_hash(state))
-                if self._write_remote(session_id, state, self._clock()):
-                    self._synced_hash[session_id] = digest
-                else:
+                digest = state_hash(state)
+                if not self._write_remote(session_id, state, self._clock()):
                     return
+                with self._cv:
+                    if self._pending.get(session_id) is state:  # not replaced by a newer state meanwhile
+                        self._pending.pop(session_id, None)
+                        self._pending_hash.pop(session_id, None)
+                    self._synced_hash[session_id] = digest
 
     def _write_remote(self, session_id: str, state: dict, now: float) -> bool:
+        with self._io_lock:
+            return self._write_remote_locked(session_id, state, now)
+
+    def _write_remote_locked(self, session_id: str, state: dict, now: float) -> bool:
         if self._breaker_open(now):
             return False
         body = json.dumps(state, separators=(",", ":"), ensure_ascii=False).encode("utf-8")

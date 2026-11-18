@@ -417,3 +417,51 @@ def test_concurrent_local_saves_to_one_session_do_not_collide(tmp_path):
     assert errors == []
     assert store.load("abcdef123456") is not None  # valid JSON, not interleaved
     assert not list((tmp_path / "abcdef123456").glob("*.tmp"))
+
+
+def test_flush_all_keeps_state_queued_when_write_fails(gh, clock, tmp_path):
+    store = make_store(gh, clock, tmp_path)
+    store.save("abcdef123456", sample_state(5))
+    gh.fail_mode = "500"
+    store.flush_all()
+    assert "abcdef123456" in store._pending  # not dropped
+    gh.fail_mode = None
+    clock.t += 1000  # breaker pause over
+    store._stopped = False
+    assert store.flush_due() == 1
+    assert "abcdef123456" in gh.files
+
+
+def test_flush_all_writes_pending_state(gh, clock, tmp_path):
+    store = make_store(gh, clock, tmp_path)
+    store.save("abcdef123456", sample_state(6))
+    store.save("bbbbbbbbbbbb", sample_state(7))
+    store.flush_all()
+    assert set(gh.files) == {"abcdef123456", "bbbbbbbbbbbb"}
+    assert not store._pending
+
+
+def test_delete_failure_is_reported_and_feeds_the_breaker(gh, clock, tmp_path):
+    store = make_store(gh, clock, tmp_path)
+    store.save("abcdef123456", sample_state())
+    store.flush_due()
+    original = gh.handler
+
+    def forbidden_delete(request):
+        if request.method == "DELETE":
+            return httpx.Response(403, json={"message": "no"})
+        return original(request)
+
+    store._client = httpx.Client(transport=httpx.MockTransport(forbidden_delete))
+    assert store.delete("abcdef123456") is False
+    assert "abcdef123456" in gh.files  # remote copy survived
+    assert store._breaker_open(clock())  # 403 paused further remote calls
+    assert store._sha.get("abcdef123456")  # cached sha is kept for a later retry
+
+
+def test_delete_success_clears_remote(gh, clock, tmp_path):
+    store = make_store(gh, clock, tmp_path)
+    store.save("abcdef123456", sample_state())
+    store.flush_due()
+    assert store.delete("abcdef123456") is True
+    assert "abcdef123456" not in gh.files
