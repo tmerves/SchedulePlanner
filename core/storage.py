@@ -163,6 +163,7 @@ class GitHubStore:
         self._sha: Dict[str, str] = {}
         self._synced_hash: Dict[str, str] = {}
         self._pending_hash: Dict[str, str] = {}
+        self._inflight: set = set()  # sessions whose write is on the wire right now
         self._failures = 0
         self._paused_until = float("-inf")
         self._size_cache: Optional[tuple] = None
@@ -297,7 +298,8 @@ class GitHubStore:
             if not force:
                 if self._pending_hash.get(session_id) == digest and session_id in self._pending:
                     return
-                if session_id not in self._pending and self._synced_hash.get(session_id) == digest:
+                if (session_id not in self._pending and session_id not in self._inflight
+                        and self._synced_hash.get(session_id) == digest):
                     return
             self._pending[session_id] = state
             self._pending_hash[session_id] = digest
@@ -359,8 +361,13 @@ class GitHubStore:
             _, session_id = min(due)
             state = self._pending.pop(session_id)
             digest = self._pending_hash.pop(session_id, state_hash(state))
+            self._inflight.add(session_id)
 
-        ok = self._write_remote(session_id, state, now)
+        try:
+            ok = self._write_remote(session_id, state, now)
+        finally:
+            with self._cv:
+                self._inflight.discard(session_id)
         with self._cv:
             if ok:
                 self._last_write[session_id] = now

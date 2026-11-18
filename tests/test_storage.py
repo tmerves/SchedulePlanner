@@ -371,3 +371,27 @@ def test_needs_touch_only_after_24_hours():
     assert needs_touch((now - timedelta(hours=25)).isoformat(), now)
     assert needs_touch(None, now)
     assert needs_touch("not a date", now)
+
+
+def test_revert_during_inflight_write_is_not_dropped(gh, clock, tmp_path):
+    """Remote holds Y; user changes to X (write in flight) and reverts to Y. Y must still be saved."""
+    store = make_store(gh, clock, tmp_path)
+    y, x = sample_state(1), sample_state(2)
+    store.save("abcdef123456", y)
+    store.flush_due()
+    clock.t += 20
+    store.save("abcdef123456", x)
+
+    original_put = store._client.put
+
+    def put_with_revert(*args, **kwargs):
+        store.save("abcdef123456", y)  # user reverts while the X write is on the wire
+        return original_put(*args, **kwargs)
+
+    store._client.put = put_with_revert
+    assert store.flush_due() == 1  # X is written
+    store._client.put = original_put
+    clock.t += 20
+    assert store.flush_due() == 1  # Y is written afterwards
+    final = json.loads(gh.files["abcdef123456"])
+    assert final["semesters"]["0009"]["excluded_section_ids"] == ["s1"]
