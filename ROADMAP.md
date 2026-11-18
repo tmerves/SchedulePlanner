@@ -158,3 +158,13 @@
   - `app.py`: `show_section_details` popup plus info icon buttons in the Catalog Browser, Section Filter Checklist, Schedule Permutator Viewer and Saved Schedules Explorer.
   - Catalog caches without details are refetched once.
 * **Acceptance Criteria & Status:** Parser and cache round-trip tests added in `tests/test_scraper.py` and `tests/test_session.py`.
+
+## Phase 8: Durable Sessions & Retention [COMPLETED]
+**Goal:** Keep user sessions across Streamlit Cloud redeploys, reboots and force pushes, and remove inactive ones on a schedule.
+
+* **Implemented Tasks:**
+  - `core/session.py`: `export_state` / `import_state` with `schema_version`, `created_at`, `last_active`.
+  - `core/storage.py`: `LocalFileStore` and `GitHubStore` (private data repo), coalesced rate-limited writes, circuit breaker, repo size guard, emergency prune dispatch.
+  - `app.py`: sessions load and save through the store; unreadable sessions are kept aside and saving is blocked instead of overwritten.
+  - `tools/prune_sessions.py` and `deploy/session-data-repo/`: 3-day inactivity deletion, 15-oldest deletion at the 200 MB cap, history squash.
+* **Acceptance Criteria & Status:** `tests/test_storage.py` (redeploy simulation, write coalescing, breaker, size guard) and `tests/test_prune.py` pass. Setup steps are in `deploy/session-data-repo/README.md`.

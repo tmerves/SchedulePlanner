@@ -45,3 +45,7 @@ pip install -r requirements.txt
 ```bash
 streamlit run app.py
 ```
+
+## Session Persistence on Streamlit Cloud
+
+Streamlit Cloud wipes the container disk on every redeploy, reboot and dependency change, so sessions need to live outside it. Create a private GitHub repo for session data and add its token to the app secrets. Setup steps and retention rules (3 days of inactivity, 15 oldest removed at 200 MB) are in [`deploy/session-data-repo/README.md`](deploy/session-data-repo/README.md). Without it, sessions are kept on local disk and are lost whenever the app redeploys.
