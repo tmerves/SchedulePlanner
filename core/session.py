@@ -2,12 +2,14 @@ import json
 import os
 import re
 import secrets
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import List, Set, Optional, Dict, Any
 from models.schema import Course, Section, Schedule
 from solver.permutator import ScheduleSolver
 
 
+SESSION_SCHEMA_VERSION: int = 1
 MAX_SELECTED_COURSES: int = 15
 MAX_SAVED_SCHEDULES: int = 8
 
@@ -25,6 +27,9 @@ class ScheduleSessionManager:
         # Internal state tracking per-semester data:
         # term_code -> { "selected_courses": Dict[str, Course], "excluded_section_ids": Set[str], "saved_schedules": List[Schedule] }
         self._semesters: Dict[str, Dict[str, Any]] = {}
+        # Persistence metadata (ISO-8601 UTC), used by the retention job
+        self.created_at: Optional[str] = None
+        self.last_active: Optional[str] = None
         self._ensure_term_exists(self._active_term_code)
 
     def _ensure_term_exists(self, term_code: str) -> None:
@@ -421,13 +426,9 @@ class ScheduleSessionManager:
             return
 
         # Multi-semester state persistence: each semester stored distinctly
-        semesters_dict = {}
         semesters_dir = filepath_path.parent / "semesters"
-        for term in self._semesters:
-            if term == "default" and self._active_term_code != "default" and not self._semesters[term]["selected_courses"] and not self._semesters[term]["saved_schedules"]:
-                continue
-            sem_data = self._serialize_semester(term)
-            semesters_dict[term] = sem_data
+        state = self.export_state()
+        for term, sem_data in state["semesters"].items():
             # Also save separate per-semester files
             if term != "default":
                 sem_file = semesters_dir / f"{term}.json"
@@ -435,12 +436,70 @@ class ScheduleSessionManager:
                 with open(sem_file, "w", encoding="utf-8") as f:
                     json.dump(sem_data, f, indent=4, ensure_ascii=False)
 
-        state = {
+        with open(filepath_path, "w", encoding="utf-8") as f:
+            json.dump(state, f, indent=4, ensure_ascii=False)
+
+    @staticmethod
+    def _now_iso() -> str:
+        return datetime.now(timezone.utc).isoformat(timespec="seconds")
+
+    def export_state(self) -> dict:
+        """
+        Returns the whole session as a JSON-compatible dict (all semesters plus metadata).
+        Sets created_at once and refreshes last_active, which the retention job uses.
+        """
+        now = self._now_iso()
+        if self.created_at is None:
+            self.created_at = now
+        self.last_active = now
+
+        semesters_dict = {}
+        for term in self._semesters:
+            if term == "default" and self._active_term_code != "default" and not self._semesters[term]["selected_courses"] and not self._semesters[term]["saved_schedules"]:
+                continue
+            semesters_dict[term] = self._serialize_semester(term)
+
+        return {
+            "schema_version": SESSION_SCHEMA_VERSION,
+            "created_at": self.created_at,
+            "last_active": self.last_active,
             "active_term": self._active_term_code,
             "semesters": semesters_dict,
         }
-        with open(filepath_path, "w", encoding="utf-8") as f:
-            json.dump(state, f, indent=4, ensure_ascii=False)
+
+    def import_state(self, state: dict, term_code: Optional[str] = None) -> None:
+        """
+        Loads a dict produced by export_state (or any older layout) into this manager.
+        Unknown keys are ignored and missing metadata is accepted.
+        """
+        if not isinstance(state, dict):
+            raise ValueError("Session state must be a JSON object")
+
+        created = state.get("created_at")
+        last = state.get("last_active")
+        if isinstance(created, str):
+            self.created_at = created
+        if isinstance(last, str):
+            self.last_active = last
+
+        if "semesters" in state and isinstance(state["semesters"], dict):
+            # Multi-semester format
+            for term, term_data in state["semesters"].items():
+                target_term = term
+                # If legacy 'default' term data exists and we have an active real term, migrate it
+                if term == "default" and self._active_term_code != "default" and (self._active_term_code not in state["semesters"] or not state["semesters"][self._active_term_code]["selected_courses"]):
+                    target_term = self._active_term_code
+                if term_code is None or target_term == term_code:
+                    self._deserialize_semester(target_term, term_data)
+            if term_code is None and "active_term" in state and state["active_term"] != "default":
+                self._active_term_code = state["active_term"]
+                self._ensure_term_exists(self._active_term_code)
+        elif "selected_courses" in state:
+            # Legacy flat format or single semester file
+            target_term = term_code or state.get("term_code") or self._active_term_code
+            self._deserialize_semester(target_term, state)
+            if self._active_term_code == "default" and target_term != "default":
+                self._active_term_code = target_term
 
     def load_session_state(self, filepath: str, term_code: Optional[str] = None) -> None:
         """
@@ -455,24 +514,7 @@ class ScheduleSessionManager:
             with open(filepath_path, "r", encoding="utf-8") as f:
                 state = json.load(f)
 
-            if "semesters" in state and isinstance(state["semesters"], dict):
-                # Multi-semester format
-                for term, term_data in state["semesters"].items():
-                    target_term = term
-                    # If legacy 'default' term data exists and we have an active real term, migrate it
-                    if term == "default" and self._active_term_code != "default" and (self._active_term_code not in state["semesters"] or not state["semesters"][self._active_term_code]["selected_courses"]):
-                        target_term = self._active_term_code
-                    if term_code is None or target_term == term_code:
-                        self._deserialize_semester(target_term, term_data)
-                if term_code is None and "active_term" in state and state["active_term"] != "default":
-                    self._active_term_code = state["active_term"]
-                    self._ensure_term_exists(self._active_term_code)
-            elif "selected_courses" in state:
-                # Legacy flat format or single semester file
-                target_term = term_code or state.get("term_code") or self._active_term_code
-                self._deserialize_semester(target_term, state)
-                if self._active_term_code == "default" and target_term != "default":
-                    self._active_term_code = target_term
+            self.import_state(state, term_code=term_code)
 
         # Check for any separate per-semester files in data/semesters/
         semesters_dir = filepath_path.parent / "semesters"

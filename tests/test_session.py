@@ -685,3 +685,34 @@ def test_max_saved_schedules_limit():
     manager.save_schedule(Schedule(sections=[sec_sp]))
     assert len(manager.get_saved_schedules()) == 1
 
+
+
+def test_catalog_cache_round_trips_section_details(tmp_path):
+    from models.schema import SectionDetails
+    course = Course(
+        course_id="CS101", title="Intro", subject="CS",
+        sections=[Section(
+            section_id="A1", course_id="CS101", instructor="Prof A",
+            meeting_times=parse_time_blocks("M", "09:00 - 10:00"),
+            details=SectionDetails(description="Learn things", seats_remaining="12"),
+        )],
+    )
+    manager = ScheduleSessionManager(cache_dir=str(tmp_path / "cache"))
+    manager.cache_catalog("0009", "CS", [course])
+    loaded = manager.get_cached_catalog("0009", "CS")
+    assert loaded[0].sections[0].details.description == "Learn things"
+    assert loaded[0].sections[0].details.seats_remaining == "12"
+
+
+def test_legacy_cache_without_details_still_loads(tmp_path):
+    import json
+    cache_dir = tmp_path / "cache"
+    cache_dir.mkdir()
+    legacy = [{
+        "course_id": "CS101", "title": "Intro", "subject": "CS", "term_code": "0009",
+        "sections": [{"section_id": "A1", "course_id": "CS101", "instructor": "Prof A", "meeting_times": []}],
+    }]
+    (cache_dir / "0009_CS.json").write_text(json.dumps(legacy))
+    manager = ScheduleSessionManager(cache_dir=str(cache_dir))
+    loaded = manager.get_cached_catalog("0009", "CS")
+    assert loaded[0].sections[0].details is None

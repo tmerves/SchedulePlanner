@@ -233,3 +233,30 @@ def test_gridlines_between_columns_and_quarter_hour_rows(mock_schedule):
         else:
             assert text == ""
 
+
+
+def test_blocks_are_clickable_with_hint(mock_schedule):
+    fig = create_schedule_calendar(mock_schedule)
+    text_trace, hit_trace = fig.data[0], fig.data[1]
+
+    # Tooltips tell the user the block is clickable
+    assert all("Click for details" in h for h in text_trace.hovertext)
+    assert all("Click for details" in h for h in hit_trace.hovertext)
+
+    # Both traces carry the section id used to open the details popup
+    expected_ids = {"1001", "2002"} & {s.section_id for s in mock_schedule.sections}
+    assert expected_ids
+    assert expected_ids <= set(text_trace.customdata)
+    assert set(hit_trace.customdata) == set(text_trace.customdata)
+
+    # Hit-test points sit inside the drawn blocks
+    for x, y in zip(hit_trace.x, hit_trace.y):
+        assert any(
+            sh.x0 <= x <= sh.x1 and sh.y0 <= y <= sh.y1 for sh in fig.layout.shapes
+        )
+
+
+def test_empty_schedule_has_no_hit_trace():
+    fig = create_schedule_calendar(Schedule(sections=[]))
+    assert len(fig.data) == 1
+    assert fig.data[0].hoverinfo == "none"

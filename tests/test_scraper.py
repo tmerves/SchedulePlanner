@@ -288,3 +288,31 @@ def test_parse_courses_hono_instructor():
     assert sec_4252.location == "Massry Schl of Business 231"
     assert sec_4252.component == "Lab"
 
+
+
+def test_parse_courses_captures_section_details(search_results_html):
+    courses = parse_courses(search_results_html, "BACC")
+    bacc_211 = next(c for c in courses if c.course_id == "BACC 211")
+    sec = next(s for s in bacc_211.sections if s.section_id == "2259")
+
+    assert sec.details is not None
+    d = sec.details
+    assert d.level == "Undergraduate"
+    assert d.college == "School of Business"
+    assert d.department == "Accounting"
+    assert d.credit_range is not None and "3.0" in d.credit_range
+    assert d.seats_remaining is not None and d.seats_remaining.isdigit()
+    assert d.delivery_method == "INPERSON"
+    assert d.description and d.description.startswith("A thorough introduction")
+    assert d.comments and "register for one discussion" in d.comments
+    # Blank values become None rather than empty strings
+    assert d.topic is None
+
+    # Scheduling fields are unchanged by the new details
+    assert sec.instructor == "Moshier,Michelle"
+    assert sec.location == "Lecture Center 7"
+
+
+def test_all_parsed_sections_have_details(search_results_html):
+    courses = parse_courses(search_results_html, "BACC")
+    assert all(s.details is not None for c in courses for s in c.sections)

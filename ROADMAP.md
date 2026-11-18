@@ -149,3 +149,12 @@
   - Target server is safeguarded with configurable rate limits, jitter, and backoff cooldowns.
   - `pytest tests/test_rate_limiter.py` and entire test suite (76 tests) pass 100%.
 ---
+## Phase 7: Detailed Section Info from Search Results [COMPLETED]
+**Goal:** Surface the registrar data that the search response already carries but the parser discarded.
+
+* **Implemented Tasks:**
+  - Added `SectionDetails` and `Section.details` to `models/schema.py` (all optional, so old caches load).
+  - `parse_courses` fills `details` through `_build_section_details`; scheduling fields are untouched.
+  - `app.py`: `show_section_details` popup plus info icon buttons in the Catalog Browser, Section Filter Checklist, Schedule Permutator Viewer and Saved Schedules Explorer.
+  - Catalog caches without details are refetched once.
+* **Acceptance Criteria & Status:** Parser and cache round-trip tests added in `tests/test_scraper.py` and `tests/test_session.py`.

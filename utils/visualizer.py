@@ -173,6 +173,12 @@ def create_schedule_calendar(
     scatter_y: List[float] = []
     scatter_text: List[str] = []
     scatter_hover: List[str] = []
+    scatter_ids: List[str] = []
+    # Invisible marker grid so the whole block (not only its label) is hoverable and clickable
+    hit_x: List[float] = []
+    hit_y: List[float] = []
+    hit_hover: List[str] = []
+    hit_ids: List[str] = []
 
     col_width = 1.0
     for sec, tb, day_idx, y0, y1 in all_timeblocks:
@@ -227,13 +233,26 @@ def create_schedule_calendar(
             f"<b>Instructor:</b> {sec.instructor}<br>"
             f"{loc_hover}"
             f"<b>Day:</b> {DAY_LABELS[day_idx]}<br>"
-            f"<b>Time:</b> {start_str} – {end_str} ({duration_mins} min)"
+            f"<b>Time:</b> {start_str} – {end_str} ({duration_mins} min)<br>"
+            f"<i style='color:#9CA3AF;'>Click for details</i>"
         )
 
         scatter_x.append(center_x)
         scatter_y.append(center_y)
         scatter_text.append(label)
         scatter_hover.append(hover)
+        scatter_ids.append(sec.section_id)
+
+        # Grid inside the block: 5 columns across, one row per quarter hour (plus both edges)
+        n_rows = max(1, int(round((y1 - y0) * 4)))
+        for xi in range(5):
+            gx = x0 + col_width * (0.1 + 0.2 * xi)
+            for yi in range(n_rows + 1):
+                gy = y0 + (y1 - y0) * yi / n_rows
+                hit_x.append(gx)
+                hit_y.append(gy)
+                hit_hover.append(hover)
+                hit_ids.append(sec.section_id)
 
     # Layer scatter text trace
     if scatter_x:
@@ -243,10 +262,28 @@ def create_schedule_calendar(
                 y=scatter_y,
                 text=scatter_text,
                 hovertext=scatter_hover,
+                customdata=scatter_ids,
                 hoverinfo="text",
                 mode="text",
                 textposition="middle center",
                 textfont=dict(family="Arial, sans-serif", size=11, color="#1E293B"),
+                # Plotly dims every unselected point after a click; keep labels at full strength
+                selected=dict(textfont=dict(color="#1E293B")),
+                unselected=dict(textfont=dict(color="#1E293B")),
+                showlegend=False,
+            )
+        )
+        fig.add_trace(
+            go.Scatter(
+                x=hit_x,
+                y=hit_y,
+                hovertext=hit_hover,
+                customdata=hit_ids,
+                hoverinfo="text",
+                mode="markers",
+                marker=dict(size=14, opacity=0),
+                selected=dict(marker=dict(opacity=0)),
+                unselected=dict(marker=dict(opacity=0)),
                 showlegend=False,
             )
         )
@@ -282,6 +319,7 @@ def create_schedule_calendar(
         plot_bgcolor="#FAFAFA",
         paper_bgcolor="#FFFFFF",
         height=650,
+        hoverdistance=30,
         hoverlabel=dict(
             bgcolor="#1F2937",
             font_size=12,

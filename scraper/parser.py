@@ -1,7 +1,7 @@
 import re
 from typing import List, Dict, Optional
 from bs4 import BeautifulSoup
-from models.schema import Course, Section, TimeBlock
+from models.schema import Course, Section, SectionDetails, TimeBlock
 from utils.time_utils import parse_time_blocks
 
 def parse_semesters(html_content: str) -> List[Dict[str, str]]:
@@ -187,6 +187,40 @@ def extract_linked_sections(comment: str) -> List[str]:
     return sorted(list(set(linked)))
 
 
+_DETAIL_FIELDS = {
+    "level": "Level",
+    "college": "College or School",
+    "department": "Department or Program",
+    "grading": "Grading",
+    "credit_range": "Credit Range",
+    "topic": "Topic if applicable",
+    "seats_remaining": "Seats remaining as of last update",
+    "session": "Session",
+    "delivery_method": "Course Delivery Method",
+    "gen_ed": "General Education Course",
+    "honors": "Honors College Course",
+    "it_commons": "IT Commons",
+    "writing_intensive": "Writing Intensive",
+    "oral_discourse": "Oral Discourse",
+    "info_literacy": "Info Literacy",
+    "special_restriction": "Special Restriction",
+    "coil": "COIL - Collaborative Online International Learning",
+    "oer": "OER - Open Educational Resources",
+    "liberal_arts": "Liberal Arts Course",
+    "comments": "Comments",
+    "description": "Course Description",
+}
+
+
+def _build_section_details(kvs: dict) -> SectionDetails:
+    """Maps raw result-page key/value pairs into a SectionDetails (blank values become None)."""
+    values = {}
+    for attr, key in _DETAIL_FIELDS.items():
+        raw = re.sub(r'\s+', ' ', kvs.get(key, "")).strip()
+        values[attr] = raw or None
+    return SectionDetails(**values)
+
+
 def parse_courses(html_content: str, subject: str, term: Optional[str] = None) -> List[Course]:
     """
     Parses search results HTML content and converts table rows (represented by key-value structures)
@@ -284,6 +318,7 @@ def parse_courses(html_content: str, subject: str, term: Optional[str] = None) -
             term_code=term,
             component=component,
             linked_sections=linked_sections,
+            details=_build_section_details(kvs),
         )
 
         if course_id not in courses_dict:

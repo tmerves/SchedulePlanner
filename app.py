@@ -136,11 +136,20 @@ def get_organized_course_sections(course: Course):
     return groups
 
 
-def format_schedule_breakdown(schedule: Schedule) -> List[Dict[str, str]]:
+def format_schedule_breakdown(schedule: Schedule) -> List[tuple]:
     """
-    Formats the list of sections in a schedule hierarchically,
+    Returns (Section, row dict) pairs for a schedule, ordered hierarchically,
     placing discussions underneath their parent lecture with visual indentation.
     """
+    def row(sec: Section, show_course: bool = True, label: Optional[str] = None) -> tuple:
+        return (sec, {
+            "Course ID": sec.course_id if show_course else "",
+            "Section": label if label is not None else f"{sec.section_id} ({sec.component})",
+            "Instructor": sec.instructor,
+            "Location": sec.location,
+            "Meeting Times": format_meeting_times(sec.meeting_times),
+        })
+
     courses_in_sched: Dict[str, List[Section]] = {}
     for s in schedule.sections:
         courses_in_sched.setdefault(s.course_id, []).append(s)
@@ -151,43 +160,156 @@ def format_schedule_breakdown(schedule: Schedule) -> List[Dict[str, str]]:
         parents = [s for s in secs if s.linked_sections and any(lid in sec_map for lid in s.linked_sections)]
         if parents:
             parent = parents[0]
-            rows.append({
-                "Course ID": parent.course_id,
-                "Section": f"{parent.section_id} ({parent.component})",
-                "Instructor": parent.instructor,
-                "Location": parent.location,
-                "Meeting Times": format_meeting_times(parent.meeting_times),
-            })
+            rows.append(row(parent))
             for lid in parent.linked_sections:
                 if lid in sec_map:
                     child = sec_map[lid]
-                    rows.append({
-                        "Course ID": "",
-                        "Section": f"   ↳ {child.section_id} ({child.component})",
-                        "Instructor": child.instructor,
-                        "Location": child.location,
-                        "Meeting Times": format_meeting_times(child.meeting_times),
-                    })
+                    rows.append(row(child, show_course=False, label=f"   ↳ {child.section_id} ({child.component})"))
             for s in secs:
                 if s.section_id != parent.section_id and s.section_id not in parent.linked_sections:
-                    rows.append({
-                        "Course ID": s.course_id,
-                        "Section": f"{s.section_id} ({s.component})",
-                        "Instructor": s.instructor,
-                        "Location": s.location,
-                        "Meeting Times": format_meeting_times(s.meeting_times),
-                    })
+                    rows.append(row(s))
         else:
             for s in secs:
                 comp_tag = f" ({s.component})" if s.component and s.component != "Lecture" else ""
-                rows.append({
-                    "Course ID": s.course_id,
-                    "Section": f"{s.section_id}{comp_tag}",
-                    "Instructor": s.instructor,
-                    "Location": s.location,
-                    "Meeting Times": format_meeting_times(s.meeting_times),
-                })
+                rows.append(row(s, label=f"{s.section_id}{comp_tag}"))
     return rows
+
+INFO_ICON = ":material/info:"
+
+
+def _detail_value(value: Optional[str]) -> str:
+    return value if value else "—"
+
+
+@st.dialog("Class Details", width="large", on_dismiss="rerun")
+def show_section_details(section: Section) -> None:
+    """Popup with the full registrar information captured for one section."""
+    d = section.details
+    comp = f" ({section.component})" if section.component else ""
+    st.subheader(f"{section.course_id} — Section {section.section_id}{comp}")
+    st.write(
+        f"**Instructor:** {section.instructor}  \n"
+        f"**Location:** {section.location}  \n"
+        f"**Meeting Times:** {format_meeting_times(section.meeting_times) or 'TBA'}"
+    )
+    if d is None:
+        st.info("No detailed information was saved for this section. Re-fetch the subject from **Fetch Course Catalog** to load it.")
+        return
+
+    st.divider()
+    col_a, col_b = st.columns(2)
+    col_a.write(
+        f"**Level:** {_detail_value(d.level)}  \n"
+        f"**College / School:** {_detail_value(d.college)}  \n"
+        f"**Department:** {_detail_value(d.department)}  \n"
+        f"**Grading:** {_detail_value(d.grading)}  \n"
+        f"**Credits:** {_detail_value(d.credit_range)}  \n"
+        f"**Topic:** {_detail_value(d.topic)}"
+    )
+    col_b.write(
+        f"**Seats remaining:** {_detail_value(d.seats_remaining)}  \n"
+        f"**Session:** {_detail_value(d.session)}  \n"
+        f"**Delivery method:** {_detail_value(d.delivery_method)}  \n"
+        f"**Special restriction:** {_detail_value(d.special_restriction)}"
+    )
+
+    flag_labels = [
+        ("General Education", d.gen_ed),
+        ("Honors College", d.honors),
+        ("IT Commons", d.it_commons),
+        ("Writing Intensive", d.writing_intensive),
+        ("Oral Discourse", d.oral_discourse),
+        ("Information Literacy", d.info_literacy),
+        ("COIL", d.coil),
+        ("OER", d.oer),
+        ("Liberal Arts", d.liberal_arts),
+    ]
+    active_flags = [
+        f"{label}: {value}" if value.upper() not in ("Y", "YES") else label
+        for label, value in flag_labels
+        if value and value.upper() not in ("N", "NO", "NONE")
+    ]
+    st.write("**Attributes:** " + (", ".join(active_flags) if active_flags else "—"))
+
+    if d.comments:
+        st.write(f"**Comments:** {d.comments}")
+    if d.description:
+        st.divider()
+        st.write("**Course description**")
+        st.write(d.description)
+
+
+def set_all_sections(course: Course, active: bool) -> None:
+    """
+    Callback for Select All / Deselect All. Checkboxes keep their own widget state under
+    `sec_chk_<id>` and would override the manager on the next run, so update both.
+    """
+    for sec in course.sections:
+        manager.toggle_section(sec.section_id, is_active=active)
+        st.session_state[f"sec_chk_{sec.section_id}"] = active
+    save_state()
+
+
+st.markdown(
+    """
+    <style>
+    [class*="st-key-info_"] button { min-height: 1.75rem; padding: 0 0.4rem; }
+    [data-testid="stExpander"] hr { margin: 0.25rem 0; }
+    [data-testid="stExpander"] [data-testid="stVerticalBlock"] { gap: 0.5rem; }
+    </style>
+    """,
+    unsafe_allow_html=True,
+)
+
+
+def section_info_button(section: Section, key: str) -> None:
+    """Info icon button that opens the details popup for a section."""
+    if st.button(INFO_ICON, key=key, help="Show class details"):
+        show_section_details(section)
+
+
+def render_schedule_breakdown(schedule: Schedule, key_prefix: str) -> None:
+    """Schedule breakdown as rows with the info button on the left, matching the other tabs."""
+    widths = [0.6, 1.4, 2.8, 2.6, 3, 4]
+    headers = ["Info", "Course ID", "Section", "Instructor", "Location", "Meeting Times"]
+    for col, title in zip(st.columns(widths), headers):
+        col.markdown(f"**{title}**")
+    for sec, row in format_schedule_breakdown(schedule):
+        c_info, c_course, c_sec, c_inst, c_loc, c_time = st.columns(widths, vertical_alignment="center")
+        with c_info:
+            section_info_button(sec, key=f"{key_prefix}_{sec.section_id}")
+        c_course.write(row["Course ID"])
+        c_sec.write(row["Section"].strip())
+        c_inst.write(row["Instructor"])
+        c_loc.write(row["Location"])
+        c_time.write(row["Meeting Times"])
+
+
+def render_clickable_calendar(schedule: Schedule, color_map: Dict[str, str], chart_id: str) -> None:
+    """
+    Draws the calendar and opens the details popup when a class block is clicked.
+    The chart key carries a counter that is bumped after each click so the selection
+    resets and the popup does not reopen on later reruns.
+    """
+    counter_key = f"chart_nonce_{chart_id}"
+    nonce = st.session_state.get(counter_key, 0)
+    fig = create_schedule_calendar(schedule, course_colors=color_map)
+    event = st.plotly_chart(
+        fig,
+        use_container_width=True,
+        key=f"{chart_id}_{nonce}",
+        on_select="rerun",
+        selection_mode="points",
+    )
+    points = event.selection.points if event and event.selection else []
+    if not points:
+        return
+    custom = points[0].get("customdata")
+    section_id = custom[0] if isinstance(custom, (list, tuple)) and custom else custom
+    section = next((s for s in schedule.sections if s.section_id == section_id), None)
+    if section is not None:
+        st.session_state[counter_key] = nonce + 1
+        show_section_details(section)
 
 
 # Initialize per-user session and session manager
@@ -259,6 +381,9 @@ if st.sidebar.button("📥 Fetch Course Catalog", type="primary", use_container_
                 for code in selected_subject_codes:
                     # Check disk cache first
                     cached = manager.get_cached_catalog(selected_term_code, code)
+                    # Caches written before section details existed have none; refetch once.
+                    if cached is not None and not any(s.details for c in cached for s in c.sections):
+                        cached = None
                     if cached is not None:
                         combined_courses.extend(cached)
                     else:
@@ -363,26 +488,24 @@ with tab_catalog:
                         except ValueError as err:
                             st.error(f"❌ {err}")
 
-                # Display table of sections
+                # Section rows with an info icon that opens the details popup
                 sec_rows = []
-                groups = get_organized_course_sections(course)
-                for grp in groups:
-                    prim = grp["primary"]
-                    sec_rows.append({
-                        "Section": f"{prim.section_id} ({prim.component})",
-                        "Instructor": prim.instructor,
-                        "Location": prim.location,
-                        "Meeting Times": format_meeting_times(prim.meeting_times),
-                    })
+                for grp in get_organized_course_sections(course):
+                    sec_rows.append((grp["primary"], f"{grp['primary'].section_id} ({grp['primary'].component})"))
                     for disc in grp["discussions"]:
-                        sec_rows.append({
-                            "Section": f"   ↳ {disc.section_id} ({disc.component})",
-                            "Instructor": disc.instructor,
-                            "Location": disc.location,
-                            "Meeting Times": format_meeting_times(disc.meeting_times),
-                        })
+                        sec_rows.append((disc, f"↳ {disc.section_id} ({disc.component})"))
                 if sec_rows:
-                    st.dataframe(pd.DataFrame(sec_rows), hide_index=True, use_container_width=True)
+                    widths = [0.6, 2, 3, 3, 4]
+                    for col, title in zip(st.columns(widths), ["Info", "Section", "Instructor", "Location", "Meeting Times"]):
+                        col.markdown(f"**{title}**")
+                    for sec, label in sec_rows:
+                        c_info, c_sec, c_inst, c_loc, c_time = st.columns(widths, vertical_alignment="center")
+                        with c_info:
+                            section_info_button(sec, key=f"info_cat_{course.course_id}_{sec.section_id}")
+                        c_sec.write(label)
+                        c_inst.write(sec.instructor)
+                        c_loc.write(sec.location)
+                        c_time.write(format_meeting_times(sec.meeting_times))
 
 # ----------------------------------------------------------------------
 # SECTION FILTER CHECKLIST
@@ -397,21 +520,11 @@ with tab_filters:
         for course_id, course in manager.selected_courses.items():
             active_count = sum(1 for s in course.sections if s.section_id not in manager.excluded_section_ids)
             with st.expander(f"**{course.course_id}**: {course.title} — Active Sections: {active_count}/{len(course.sections)}", expanded=True):
-                btn_col1, btn_col2, _ = st.columns([1, 1, 4])
-                
-                if btn_col1.button("Select All", key=f"select_all_{course_id}"):
-                    for s in course.sections:
-                        manager.toggle_section(s.section_id, is_active=True)
-                    save_state()
-                    st.rerun()
-                
-                if btn_col2.button("Deselect All", key=f"deselect_all_{course_id}"):
-                    for s in course.sections:
-                        manager.toggle_section(s.section_id, is_active=False)
-                    save_state()
-                    st.rerun()
+                btn_col1, btn_col2, _ = st.columns([1, 1, 6], gap="small")
+                btn_col1.button("Select All", key=f"select_all_{course_id}", on_click=set_all_sections, args=(course, True))
+                btn_col2.button("Deselect All", key=f"deselect_all_{course_id}", on_click=set_all_sections, args=(course, False))
 
-                st.markdown("---")
+                st.divider()
                 groups = get_organized_course_sections(course)
                 for grp in groups:
                     prim = grp["primary"]
@@ -423,7 +536,10 @@ with tab_filters:
                         f"Instructor: {prim.instructor} | Location: {prim.location} | "
                         f"Times: {format_meeting_times(prim.meeting_times)}"
                     )
-                    new_val_prim = st.checkbox(chk_label_prim, value=is_active_prim, key=f"sec_chk_{prim.section_id}")
+                    col_info_prim, col_chk_prim = st.columns([0.04, 0.96], vertical_alignment="center", gap="small")
+                    with col_info_prim:
+                        section_info_button(prim, key=f"info_chk_{course_id}_{prim.section_id}")
+                    new_val_prim = col_chk_prim.checkbox(chk_label_prim, value=is_active_prim, key=f"sec_chk_{prim.section_id}")
                     if new_val_prim != is_active_prim:
                         manager.toggle_section(prim.section_id, is_active=new_val_prim)
                         save_state()
@@ -431,7 +547,9 @@ with tab_filters:
 
                     if discs:
                         for disc in discs:
-                            col_indent, col_chk = st.columns([0.06, 0.94])
+                            col_info, col_indent, col_chk = st.columns([0.04, 0.04, 0.92], vertical_alignment="center", gap="small")
+                            with col_info:
+                                section_info_button(disc, key=f"info_chk_{course_id}_{disc.section_id}")
                             with col_chk:
                                 is_active_disc = disc.section_id not in manager.excluded_section_ids
                                 chk_label_disc = (
@@ -534,13 +652,11 @@ with tab_viewer:
 
                 # Render weekly timetable calendar
                 color_map = get_course_color_map(manager.get_active_courses())
-                fig = create_schedule_calendar(current_schedule, course_colors=color_map)
-                st.plotly_chart(fig, use_container_width=True, key=f"schedule_viewer_chart_{current_idx}")
+                render_clickable_calendar(current_schedule, color_map, chart_id=f"schedule_viewer_chart_{current_idx}")
 
                 # Detailed course list for active schedule
                 with st.expander("📋 Course Details in this Schedule", expanded=False):
-                    details = format_schedule_breakdown(current_schedule)
-                    st.dataframe(pd.DataFrame(details), hide_index=True, use_container_width=True)
+                    render_schedule_breakdown(current_schedule, key_prefix=f"info_view_{current_idx}")
 
 
 
@@ -589,10 +705,8 @@ with tab_saved:
 
         chosen_saved = saved_schedules[selected_saved_idx]
         saved_color_map = get_course_color_map(chosen_saved)
-        saved_fig = create_schedule_calendar(chosen_saved, course_colors=saved_color_map)
-        st.plotly_chart(saved_fig, use_container_width=True, key=f"saved_schedule_chart_{view_term_code}_{selected_saved_idx}")
+        render_clickable_calendar(chosen_saved, saved_color_map, chart_id=f"saved_schedule_chart_{view_term_code}_{selected_saved_idx}")
 
         with st.expander("📋 Saved Schedule Breakdown", expanded=True):
-            breakdown_rows = format_schedule_breakdown(chosen_saved)
-            st.dataframe(pd.DataFrame(breakdown_rows), hide_index=True, use_container_width=True)
+            render_schedule_breakdown(chosen_saved, key_prefix=f"info_saved_{view_term_code}_{selected_saved_idx}")
 

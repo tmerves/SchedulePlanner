@@ -52,6 +52,7 @@ University Portal (Web/HTML)
   * Separates physical classroom locations from instructor names (`_parse_location_and_instructor`), robustly handling room numbers with digits, generational suffixes (e.g. `II`, `Jr.`), compound surnames (e.g. `Van Horn`, `De La Cruz`), and non-classroom keywords (`Online`, `Arranged`, `Off Campus`).
   * Extracts section component types (`Lecture`, `Discussion`, `Lab`, `Seminar`, etc.).
   * Parses comments to identify linked discussion and lab section IDs (`extract_linked_sections`).
+  * Captures the remaining registrar fields into `SectionDetails` (level, college, department, grading, credits, seats, delivery method, gen-ed/honors/writing/oral/info-literacy flags, restrictions, comments, course description) via `_build_section_details`. These come from the same search POST response, so no extra requests are made. Scheduling fields and the solver do not use them.
 * **Caching:** Results cached by session manager at `data/cache/{term_code}_{subject_code}.json`.
 
 ### 2. Session State & Multi-Semester Isolation (`core/session.py`)
@@ -78,9 +79,9 @@ University Portal (Web/HTML)
 * **Streamlit Application (`app.py`):**
   * **Per-User URL Synchronization:** Synchronizes `st.query_params["session_id"]` with user sessions, generating random unique IDs on initial visit and enabling session recovery on return.
   * **Sidebar:** Dynamic semester dropdown and searchable multi-subject picker. Includes Session & Unique URL section with quick session ID copy and fresh session initialization. Switching semesters synchronizes active term and resets computed permutations.
-  * **Tab 1: 🔍 Catalog Browser:** Searchable course list, showing section counts, instructors, locations, and nested linked discussions (`get_organized_course_sections`).
-  * **Tab 2: ⚙️ Section Filter Checklist:** Per-course section checkboxes with indented discussion sections, plus bulk "Select All" and "Deselect All" controls.
-  * **Tab 3: 🗓️ Schedule Permutator Viewer:** Solves valid schedules, provides navigation pagination and jump slider, displays bookmarked status, renders the Plotly calendar, and presents hierarchical breakdown tables.
+  * **Tab 1: 🔍 Catalog Browser:** Searchable course list, showing section counts, instructors, locations, and nested linked discussions (`get_organized_course_sections`). Each section row has an info icon that opens a `show_section_details` popup (`st.dialog`) with the full registrar details.
+  * **Tab 2: ⚙️ Section Filter Checklist:** Per-course section checkboxes with indented discussion sections, plus bulk "Select All" and "Deselect All" controls. Each section has the same info icon.
+  * **Tab 3: 🗓️ Schedule Permutator Viewer:** Solves valid schedules, provides navigation pagination and jump slider, displays bookmarked status, renders the Plotly calendar, and presents hierarchical breakdown tables, with an info button per section (`render_schedule_info_buttons`). The Saved Schedules Explorer breakdown has the same buttons.
   * **Tab 4: 💾 Saved Schedules Explorer:** Browse saved schedules for any semester, view visual timetable grids, inspect course breakdowns, or remove/clear saved schedules.
 * **Visualizer Module (`utils/visualizer.py`):**
   * Coordinate system: X-axis represents day of the week (Mon–Fri, auto-expanding to Sat/Sun if needed); Y-axis represents decimal hour (reversed so mornings start at the top).
@@ -88,7 +89,8 @@ University Portal (Web/HTML)
   * Quarter-hour horizontal gridlines: Divides each hour into 4 rows (15-minute intervals) with clean hourly labels on the Y-axis.
   * Rounded pastel block shapes with darker border tones (`_get_border_color`).
   * Displays course code, section number, component badge, meeting time, and physical classroom location.
-  * Rich hover tooltips with complete section details and duration.
+  * Rich hover tooltips with complete section details and duration, ending in a muted "Click for details" hint.
+  * Clickable blocks: an invisible marker grid over each block carries the `section_id` as `customdata`. `app.py:render_clickable_calendar` reads the Streamlit plotly selection and opens the section details popup (used by the Permutator Viewer and Saved Schedules Explorer).
 
 ---
 
@@ -102,6 +104,11 @@ class TimeBlock(BaseModel):
     start_time: time
     end_time: time
 
+class SectionDetails(BaseModel):  # all fields Optional[str]; never read by the solver
+    level, college, department, grading, credit_range, topic, seats_remaining, session,
+    delivery_method, gen_ed, honors, it_commons, writing_intensive, oral_discourse,
+    info_literacy, special_restriction, coil, oer, liberal_arts, comments, description
+
 class Section(BaseModel):
     section_id: str
     course_id: str
@@ -111,6 +118,7 @@ class Section(BaseModel):
     term_code: Optional[str] = None
     component: str = "Lecture"
     linked_sections: List[str] = []
+    details: Optional[SectionDetails] = None
 
 class Course(BaseModel):
     course_id: str
