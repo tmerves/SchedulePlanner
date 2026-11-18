@@ -19,3 +19,8 @@
   2. Inspect the assumptions of the test vs. the implementation.
   3. Formulate a hypothesis before modifying code.
   4. Never edit a test just to force a passing status unless the test itself was fundamentally flawed.
+
+# Version Control
+- Record every individual design change as its own commit, including each specific bug fix. Do not batch unrelated changes into one commit.
+- Keep commit messages to a short couple of words, in the style of the existing history (for example `added rate limitting`, `fix newly introduced bug`, `remove default course selection`). No long bodies.
+- Commit each change once its tests pass, before starting the next change.
