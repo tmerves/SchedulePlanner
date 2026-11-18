@@ -12,8 +12,8 @@ from core.session import (
     ScheduleSessionManager,
     generate_session_id,
     is_valid_session_id,
-    get_user_session_filepath,
 )
+from core.storage import build_store, needs_touch
 from utils.visualizer import create_schedule_calendar, get_course_color_map
 from utils.time_utils import format_meeting_times
 
@@ -53,33 +53,64 @@ def init_user_session() -> str:
     return session_id
 
 
+@st.cache_resource(show_spinner=False)
+def get_store():
+    """
+    Process-wide session store. Uses the private GitHub data repo when [session_store] is set in
+    the Streamlit secrets, otherwise local disk (which Streamlit Cloud wipes on redeploy).
+    """
+    try:
+        config = st.secrets["session_store"] if "session_store" in st.secrets else None
+    except Exception:
+        config = None
+    return build_store({"session_store": config} if config else None)
+
+
 def get_manager(session_id: str) -> ScheduleSessionManager:
     """
     Retrieves or initializes the ScheduleSessionManager from Streamlit session_state,
-    automatically loading persisted state from data/sessions/{session_id}/session_state.json.
+    loading the persisted state once per browser connection.
     Course catalogs remain shared in data/cache.
     """
     if "session_manager" not in st.session_state:
         manager = ScheduleSessionManager(cache_dir="data/cache", default_term="0009")
-        state_file = get_user_session_filepath(session_id)
-        if state_file.exists():
+        store = get_store()
+        st.session_state.persist_blocked = False
+        try:
+            state = store.load(session_id)
+            if state is None:
+                # Brand new session: check the data repo has room (cached, rate limited)
+                try:
+                    store.guard_new_session()
+                except Exception:
+                    pass
+            else:
+                manager.import_state(state)
+                if needs_touch(manager.last_active):
+                    store.save(session_id, manager.export_state(), force=True)
+        except Exception as e:
+            # Never overwrite a session we could not read: keep the old copy and block saving
+            manager = ScheduleSessionManager(cache_dir="data/cache", default_term="0009")
+            st.session_state.persist_blocked = True
+            st.session_state.load_error = str(e)
             try:
-                manager.load_session_state(str(state_file))
-            except Exception as e:
-                st.sidebar.warning(f"Note: Could not restore previous state ({e})")
+                store.quarantine(session_id)
+            except Exception:
+                pass
         st.session_state.session_manager = manager
     return st.session_state.session_manager
 
 
 def save_state():
     """
-    Persists the current state of selections, excluded sections, and saved schedules to disk
-    under the active user's session state file.
+    Persists selections, excluded sections, and saved schedules for the active session.
+    The store coalesces and rate limits remote writes; this call never blocks on the network.
     """
+    if st.session_state.get("persist_blocked"):
+        return
     if "session_manager" in st.session_state and "current_session_id" in st.session_state:
         session_id = st.session_state.current_session_id
-        state_file = get_user_session_filepath(session_id)
-        st.session_state.session_manager.save_session_state(str(state_file))
+        get_store().save(session_id, st.session_state.session_manager.export_state())
 
 
 @st.cache_data(show_spinner=False, ttl=1800)
@@ -316,6 +347,15 @@ def render_clickable_calendar(schedule: Schedule, color_map: Dict[str, str], cha
 current_session_id = init_user_session()
 manager = get_manager(current_session_id)
 
+if st.session_state.get("persist_blocked"):
+    st.sidebar.warning(
+        "Your saved session could not be read, so changes are not being saved and your "
+        f"previous data was kept aside. ({st.session_state.get('load_error', 'unknown error')})"
+    )
+    if st.sidebar.button("Start fresh and overwrite", key="btn_unblock_persist"):
+        st.session_state.persist_blocked = False
+        st.rerun()
+
 # Sidebar: Controls & Selected Courses List
 st.sidebar.title("Course Planner")
 st.sidebar.caption("University at Albany Schedule Generator")
@@ -323,7 +363,7 @@ st.sidebar.caption("University at Albany Schedule Generator")
 # Session & Share URL controls
 with st.sidebar.expander("🔗 Session & Unique URL", expanded=False):
     st.write(f"**Session ID:** `{current_session_id}`")
-    st.caption("Your courses and schedules are tied to this URL session. Bookmark to return, but sessions expire after 24 hours of inactivity.")
+    st.caption("Your courses and schedules are tied to this URL session. Bookmark to return, but sessions are deleted after 3 days of inactivity.")
     if st.button("🆕 Start Fresh Session", use_container_width=True, key="btn_fresh_session"):
         new_sid = generate_session_id()
         st.query_params["session_id"] = new_sid
