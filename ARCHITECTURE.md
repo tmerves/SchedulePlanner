@@ -94,6 +94,7 @@ University Portal (Web/HTML)
   * Rounded pastel block shapes with darker border tones (`_get_border_color`).
   * Displays course code, section number, component badge, meeting time, and physical classroom location.
   * Rich hover tooltips with complete section details and duration, ending in a muted "Click for details" hint.
+  * Theme aware: `create_schedule_calendar(..., dark=...)` switches the background, grid, axis text and tooltip between `LIGHT_THEME` and `DARK_THEME`. `app.py:is_dark_theme` reads `st.context.theme.type` (the browser's color scheme by default) and the chart is drawn with `theme=None` so Streamlit does not restyle it. Class blocks keep their pastel fills and dark text in both themes.
   * Clickable blocks: an invisible marker grid over each block carries the `section_id` as `customdata`. `app.py:render_clickable_calendar` reads the Streamlit plotly selection and opens the section details popup (used by the Permutator Viewer and Saved Schedules Explorer).
 
 ---

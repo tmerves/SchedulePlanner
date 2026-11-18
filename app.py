@@ -351,6 +351,14 @@ def render_schedule_breakdown(schedule: Schedule, key_prefix: str) -> None:
         c_time.write(row["Meeting Times"])
 
 
+def is_dark_theme() -> bool:
+    """True when the app is currently shown in a dark theme (follows the browser setting by default)."""
+    try:
+        return st.context.theme.type == "dark"
+    except Exception:
+        return False
+
+
 def render_clickable_calendar(schedule: Schedule, color_map: Dict[str, str], chart_id: str) -> None:
     """
     Draws the calendar and opens the details popup when a class block is clicked.
@@ -359,11 +367,13 @@ def render_clickable_calendar(schedule: Schedule, color_map: Dict[str, str], cha
     """
     counter_key = f"chart_nonce_{chart_id}"
     nonce = st.session_state.get(counter_key, 0)
-    fig = create_schedule_calendar(schedule, course_colors=color_map)
+    dark = is_dark_theme()
+    fig = create_schedule_calendar(schedule, course_colors=color_map, dark=dark)
     event = st.plotly_chart(
         fig,
         use_container_width=True,
-        key=f"{chart_id}_{nonce}",
+        theme=None,  # our own palette is authoritative; Streamlit's theme must not restyle it
+        key=f"{chart_id}_{nonce}_{'dark' if dark else 'light'}",
         on_select="rerun",
         selection_mode="points",
     )

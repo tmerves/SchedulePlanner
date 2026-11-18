@@ -260,3 +260,40 @@ def test_empty_schedule_has_no_hit_trace():
     fig = create_schedule_calendar(Schedule(sections=[]))
     assert len(fig.data) == 1
     assert fig.data[0].hoverinfo == "none"
+
+
+def test_light_theme_is_the_default_and_unchanged(mock_schedule):
+    fig = create_schedule_calendar(mock_schedule)
+    assert fig.layout.paper_bgcolor == "#FFFFFF"
+    assert fig.layout.plot_bgcolor == "#FAFAFA"
+    assert fig.layout.xaxis.tickfont.color == "#1F2937"
+    assert fig.layout.yaxis.gridcolor == "#E5E7EB"
+
+
+def test_dark_theme_changes_chrome_but_not_class_blocks(mock_schedule):
+    colors = {"CS 101": "#A0C4FF", "MATH 201": "#FFC6FF"}
+    light = create_schedule_calendar(mock_schedule, course_colors=colors)
+    dark = create_schedule_calendar(mock_schedule, course_colors=colors, dark=True)
+
+    # Background is transparent so the app's own dark background shows through
+    assert dark.layout.paper_bgcolor == "rgba(0,0,0,0)"
+    assert dark.layout.plot_bgcolor != light.layout.plot_bgcolor
+    # Axis text is light enough to read on a dark background
+    assert dark.layout.xaxis.tickfont.color == "#F3F4F6"
+    assert dark.layout.yaxis.tickfont.color == "#CBD5E1"
+    assert dark.layout.yaxis.gridcolor != light.layout.yaxis.gridcolor
+    assert dark.layout.hoverlabel.bordercolor == "#6B7280"
+
+    # Class blocks keep their pastel fills and dark label text in both themes
+    assert [sh.fillcolor for sh in dark.layout.shapes] == [sh.fillcolor for sh in light.layout.shapes]
+    assert dark.data[0].textfont.color == light.data[0].textfont.color == "#1E293B"
+    # Interaction data is identical
+    assert list(dark.data[0].customdata) == list(light.data[0].customdata)
+    assert list(dark.data[0].hovertext) == list(light.data[0].hovertext)
+
+
+def test_dark_theme_footnote_and_hint_are_readable():
+    from models.schema import Schedule, Section
+    sched = Schedule(sections=[Section(section_id="9", course_id="X 1", instructor="A", meeting_times=[])])
+    fig = create_schedule_calendar(sched, dark=True)
+    assert fig.layout.annotations[0].font.color == "#94A3B8"

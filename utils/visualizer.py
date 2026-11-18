@@ -44,6 +44,35 @@ PASTEL_COLORS = [
 ]
 
 
+# Colors for the calendar chrome (background, grid, axis text, tooltip). Class blocks keep their
+# pastel fills and dark text in both themes, so only the surroundings change.
+LIGHT_THEME = {
+    "paper": "#FFFFFF",
+    "plot": "#FAFAFA",
+    "grid": "#E5E7EB",
+    "day_text": "#1F2937",
+    "hour_text": "#4B5563",
+    "footnote": "#64748B",
+    "hover_bg": "#1F2937",
+    "hover_text": "#FFFFFF",
+    "hover_border": "#1F2937",
+    "hover_hint": "#9CA3AF",
+}
+
+DARK_THEME = {
+    "paper": "rgba(0,0,0,0)",           # transparent: shows the app's own dark background
+    "plot": "rgba(255,255,255,0.04)",
+    "grid": "rgba(255,255,255,0.14)",
+    "day_text": "#F3F4F6",
+    "hour_text": "#CBD5E1",
+    "footnote": "#94A3B8",
+    "hover_bg": "#111827",
+    "hover_text": "#F9FAFB",
+    "hover_border": "#6B7280",
+    "hover_hint": "#9CA3AF",
+}
+
+
 def _get_border_color(fill_hex: str, factor: float = 0.65) -> str:
     """
     Computes a slightly darker accent tone of the given pastel hex color for the border.
@@ -120,6 +149,7 @@ def get_course_color_map(
 def create_schedule_calendar(
     schedule: Schedule,
     course_colors: Optional[Dict[str, str]] = None,
+    dark: bool = False,
 ) -> go.Figure:
     """
     Builds a weekly schedule calendar using coordinate-based Plotly shapes and scatter text traces.
@@ -132,6 +162,7 @@ def create_schedule_calendar(
     """
     if course_colors is None:
         course_colors = get_course_color_map([schedule])
+    theme = DARK_THEME if dark else LIGHT_THEME
 
     fig = go.Figure()
 
@@ -234,7 +265,7 @@ def create_schedule_calendar(
             f"{loc_hover}"
             f"<b>Day:</b> {DAY_LABELS[day_idx]}<br>"
             f"<b>Time:</b> {start_str} – {end_str} ({duration_mins} min)<br>"
-            f"<i style='color:#9CA3AF;'>Click for details</i>"
+            f"<i style='color:{theme['hover_hint']};'>Click for details</i>"
         )
 
         scatter_x.append(center_x)
@@ -316,15 +347,16 @@ def create_schedule_calendar(
 
     fig.update_layout(
         margin=dict(l=65, r=25, t=50, b=30),
-        plot_bgcolor="#FAFAFA",
-        paper_bgcolor="#FFFFFF",
+        plot_bgcolor=theme["plot"],
+        paper_bgcolor=theme["paper"],
         height=650,
         hoverdistance=30,
         hoverlabel=dict(
-            bgcolor="#1F2937",
+            bgcolor=theme["hover_bg"],
+            bordercolor=theme["hover_border"],
             font_size=12,
             font_family="Arial, sans-serif",
-            font_color="#FFFFFF",
+            font_color=theme["hover_text"],
         ),
         xaxis=dict(
             tickmode="array",
@@ -336,13 +368,13 @@ def create_schedule_calendar(
                 tickmode="array",
                 tickvals=x_minor_tickvals,
                 showgrid=True,
-                gridcolor="#E5E7EB",
+                gridcolor=theme["grid"],
                 gridwidth=1,
             ),
             zeroline=False,
             fixedrange=True,
             side="top",
-            tickfont=dict(size=12, family="Arial, sans-serif", color="#1F2937"),
+            tickfont=dict(size=12, family="Arial, sans-serif", color=theme["day_text"]),
         ),
         yaxis=dict(
             tickmode="array",
@@ -351,10 +383,10 @@ def create_schedule_calendar(
             range=[max_hour, min_hour],
             autorange="reversed",
             showgrid=True,
-            gridcolor="#E5E7EB",
+            gridcolor=theme["grid"],
             zeroline=False,
             fixedrange=True,
-            tickfont=dict(size=11, family="Arial, sans-serif", color="#4B5563"),
+            tickfont=dict(size=11, family="Arial, sans-serif", color=theme["hour_text"]),
         ),
     )
 
@@ -367,7 +399,7 @@ def create_schedule_calendar(
             x=0.5,
             y=-0.05,
             showarrow=False,
-            font=dict(size=11, color="#64748B"),
+            font=dict(size=11, color=theme["footnote"]),
         )
 
     return fig
