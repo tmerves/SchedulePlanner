@@ -46,6 +46,7 @@ def init_user_session() -> str:
             del st.session_state["session_manager"]
         if "catalog_courses" in st.session_state:
             del st.session_state["catalog_courses"]
+        clear_checkbox_state()
         if "computed_schedules" in st.session_state:
             del st.session_state["computed_schedules"]
         if "schedule_idx" in st.session_state:
@@ -281,6 +282,29 @@ def show_section_details(section: Section) -> None:
         st.write(d.description)
 
 
+def clear_checkbox_state() -> None:
+    """Drops cached checkbox widget state so it is rebuilt from the manager (new session or semester)."""
+    for key in [k for k in st.session_state if str(k).startswith("sec_chk_")]:
+        del st.session_state[key]
+
+
+def toggle_section_cb(section_id: str) -> None:
+    """Checkbox callback: apply the widget's new value to the manager and save."""
+    manager.toggle_section(section_id, is_active=st.session_state[f"sec_chk_{section_id}"])
+    save_state()
+
+
+def section_checkbox(container, label: str, section_id: str) -> None:
+    """
+    A section on/off checkbox whose state lives in session_state under `sec_chk_<id>`.
+    It is seeded from the manager once, so no default `value` is passed alongside the key.
+    """
+    key = f"sec_chk_{section_id}"
+    if key not in st.session_state:
+        st.session_state[key] = section_id not in manager.excluded_section_ids
+    container.checkbox(label, key=key, on_change=toggle_section_cb, args=(section_id,))
+
+
 def set_all_sections(course: Course, active: bool) -> None:
     """
     Callback for Select All / Deselect All. Checkboxes keep their own widget state under
@@ -366,6 +390,7 @@ if st.session_state.get("persist_blocked"):
         )
         if st.sidebar.button("Retry loading my session", key="btn_retry_load"):
             del st.session_state["session_manager"]
+            clear_checkbox_state()
             st.rerun()
     else:
         st.sidebar.warning(
@@ -374,6 +399,7 @@ if st.session_state.get("persist_blocked"):
         )
         if st.sidebar.button("Start fresh and overwrite", key="btn_unblock_persist"):
             st.session_state.persist_blocked = False
+            clear_checkbox_state()
             st.rerun()
 
 # Sidebar: Controls & Selected Courses List
@@ -405,6 +431,7 @@ else:
 if selected_term_code:
     if manager.active_term_code != selected_term_code:
         manager.set_term(selected_term_code)
+        clear_checkbox_state()
         if st.session_state.get("catalog_term") != selected_term_code:
             st.session_state.catalog_courses = []
             st.session_state.catalog_term = selected_term_code
@@ -590,7 +617,6 @@ with tab_filters:
                     prim = grp["primary"]
                     discs = grp["discussions"]
 
-                    is_active_prim = prim.section_id not in manager.excluded_section_ids
                     chk_label_prim = (
                         f"Section **{prim.section_id}** ({prim.component}) | "
                         f"Instructor: {prim.instructor} | Location: {prim.location} | "
@@ -599,11 +625,7 @@ with tab_filters:
                     col_info_prim, col_chk_prim = st.columns([0.04, 0.96], vertical_alignment="center", gap="small")
                     with col_info_prim:
                         section_info_button(prim, key=f"info_chk_{course_id}_{prim.section_id}")
-                    new_val_prim = col_chk_prim.checkbox(chk_label_prim, value=is_active_prim, key=f"sec_chk_{prim.section_id}")
-                    if new_val_prim != is_active_prim:
-                        manager.toggle_section(prim.section_id, is_active=new_val_prim)
-                        save_state()
-                        st.rerun()
+                    section_checkbox(col_chk_prim, chk_label_prim, prim.section_id)
 
                     if discs:
                         for disc in discs:
@@ -611,17 +633,12 @@ with tab_filters:
                             with col_info:
                                 section_info_button(disc, key=f"info_chk_{course_id}_{disc.section_id}")
                             with col_chk:
-                                is_active_disc = disc.section_id not in manager.excluded_section_ids
                                 chk_label_disc = (
                                     f"↳ Discussion Section **{disc.section_id}** | "
                                     f"Instructor: {disc.instructor} | Location: {disc.location} | "
                                     f"Times: {format_meeting_times(disc.meeting_times)}"
                                 )
-                                new_val_disc = st.checkbox(chk_label_disc, value=is_active_disc, key=f"sec_chk_{disc.section_id}")
-                                if new_val_disc != is_active_disc:
-                                    manager.toggle_section(disc.section_id, is_active=new_val_disc)
-                                    save_state()
-                                    st.rerun()
+                                section_checkbox(st, chk_label_disc, disc.section_id)
 
 
 
