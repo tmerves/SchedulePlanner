@@ -1,8 +1,9 @@
 name: prune-sessions
 
-# Copy this file to .github/workflows/prune.yml in the PRIVATE session data repo,
-# together with tools/prune_sessions.py from the app repo (save it as prune_sessions.py
-# at the root of the data repo). See deploy/session-data-repo/README.md.
+# Lives on the main branch of the PRIVATE session data repo, together with prune_sessions.py
+# (copy of tools/prune_sessions.py from the app repo). Session files live on a separate
+# `sessions` branch so this workflow file is never part of the history rewrite below:
+# GITHUB_TOKEN may not create or update workflow files. See deploy/session-data-repo/README.md.
 
 on:
   schedule:
@@ -23,13 +24,24 @@ concurrency:
 permissions:
   contents: write
 
+env:
+  DATA_BRANCH: sessions
+
 jobs:
   prune:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout script (main)
+        uses: actions/checkout@v4
         with:
+          fetch-depth: 1
+
+      - name: Checkout session data
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ env.DATA_BRANCH }}
+          path: data
           fetch-depth: 1
 
       - uses: actions/setup-python@v5
@@ -43,21 +55,21 @@ jobs:
         run: |
           SIZE_KB=$(gh api "repos/${{ github.repository }}" --jq .size)
           python prune_sessions.py \
-            --sessions-dir sessions \
+            --sessions-dir data/sessions \
             --mode "${{ inputs.mode || 'scheduled' }}" \
             --size-mb "$((SIZE_KB / 1024))"
 
       # Deleting files does not shrink git history, so only when something was deleted
-      # rewrite history to a single commit. The lease makes the push fail instead of
+      # rewrite the data branch to a single commit. The lease makes the push fail instead of
       # overwriting a session the app saved while this job was running; the next run retries.
       - name: Squash history
         if: steps.prune.outputs.deleted_count != '0'
+        working-directory: data
         run: |
           BASE=$(git rev-parse HEAD)
-          BRANCH="${{ github.ref_name }}"
           git config user.name "session-prune"
           git config user.email "session-prune@users.noreply.github.com"
           git checkout --orphan squashed
           git add -A
           git commit -m "Prune sessions and squash history"
-          git push --force-with-lease="$BRANCH:$BASE" origin "squashed:$BRANCH"
+          git push --force-with-lease="$DATA_BRANCH:$BASE" origin "squashed:$DATA_BRANCH"

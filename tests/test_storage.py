@@ -465,3 +465,31 @@ def test_delete_success_clears_remote(gh, clock, tmp_path):
     store.flush_due()
     assert store.delete("abcdef123456") is True
     assert "abcdef123456" not in gh.files
+
+
+def test_dispatch_targets_workflow_branch_not_data_branch(clock, tmp_path):
+    seen = {}
+
+    def handler(request):
+        if request.url.path.endswith("/dispatches"):
+            seen["body"] = json.loads(request.content)
+            return httpx.Response(204)
+        return httpx.Response(200, json={"size": 300 * 1024})
+
+    store = GitHubStore(
+        token="t", repo=REPO, branch="sessions", workflow_ref="main",
+        client=httpx.Client(transport=httpx.MockTransport(handler)),
+        local=LocalFileStore(str(tmp_path)), clock=clock, start_thread=False,
+    )
+    assert store.guard_new_session() == "over_cap"
+    assert seen["body"]["ref"] == "main"
+    assert seen["body"]["inputs"] == {"mode": "emergency"}
+
+
+def test_build_store_passes_branch_settings(tmp_path):
+    store = build_store({"session_store": {"token": "t", "repo": REPO, "branch": "sessions"}}, str(tmp_path))
+    try:
+        assert isinstance(store, GitHubStore)
+        assert store.branch == "sessions" and store.workflow_ref == "main"
+    finally:
+        store.flush_all()

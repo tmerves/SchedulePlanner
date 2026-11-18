@@ -129,6 +129,7 @@ class GitHubStore:
         repo: str,
         branch: str = "main",
         *,
+        workflow_ref: str = "main",
         api_url: str = "https://api.github.com",
         client: Optional[httpx.Client] = None,
         local: Optional[LocalFileStore] = None,
@@ -141,6 +142,7 @@ class GitHubStore:
     ):
         self.repo = repo
         self.branch = branch
+        self.workflow_ref = workflow_ref  # branch that holds the prune workflow, not the data branch
         self.api_url = api_url.rstrip("/")
         self.local = local or LocalFileStore()
         self._clock = clock
@@ -511,7 +513,7 @@ class GitHubStore:
             response = self._client.post(
                 f"{self.api_url}/repos/{self.repo}/actions/workflows/{PRUNE_WORKFLOW_FILE}/dispatches",
                 headers=self._headers,
-                json={"ref": self.branch, "inputs": {"mode": "emergency"}},
+                json={"ref": self.workflow_ref, "inputs": {"mode": "emergency"}},
             )
             return response.status_code == 204
         except httpx.HTTPError as exc:
@@ -538,6 +540,7 @@ def build_store(secrets: Optional[Mapping[str, Any]] = None, local_dir: str = "d
             token=config["token"],
             repo=config["repo"],
             branch=config.get("branch", "main"),
+            workflow_ref=config.get("workflow_ref", "main"),
             local=local,
         )
     return local
