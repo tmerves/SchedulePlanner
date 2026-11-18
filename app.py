@@ -13,7 +13,7 @@ from core.session import (
     generate_session_id,
     is_valid_session_id,
 )
-from core.storage import build_store, needs_touch
+from core.storage import SessionUnavailable, build_store, needs_touch
 from utils.visualizer import create_schedule_calendar, get_course_color_map
 from utils.time_utils import format_meeting_times
 
@@ -37,6 +37,7 @@ def init_user_session() -> str:
     else:
         session_id = generate_session_id()
         st.query_params["session_id"] = session_id
+        st.session_state.known_new_session = session_id  # nothing to load, skip the storage read
 
     # If the session_id changed in the URL or this is a fresh connection, reset session state
     if st.session_state.get("current_session_id") != session_id:
@@ -77,7 +78,10 @@ def get_manager(session_id: str) -> ScheduleSessionManager:
         store = get_store()
         st.session_state.persist_blocked = False
         try:
-            state = store.load(session_id)
+            if st.session_state.get("known_new_session") == session_id:
+                state = None
+            else:
+                state = store.load(session_id)
             if state is None:
                 # Brand new session: check the data repo has room (cached, rate limited)
                 try:
@@ -88,10 +92,17 @@ def get_manager(session_id: str) -> ScheduleSessionManager:
                 manager.import_state(state)
                 if needs_touch(manager.last_active):
                     store.save(session_id, manager.export_state(), force=True)
+        except SessionUnavailable as e:
+            # Storage is unreachable: the saved session is fine, so do not treat this as a new one
+            manager = ScheduleSessionManager(cache_dir="data/cache", default_term="0009")
+            st.session_state.persist_blocked = True
+            st.session_state.load_retryable = True
+            st.session_state.load_error = str(e)
         except Exception as e:
             # Never overwrite a session we could not read: keep the old copy and block saving
             manager = ScheduleSessionManager(cache_dir="data/cache", default_term="0009")
             st.session_state.persist_blocked = True
+            st.session_state.load_retryable = False
             st.session_state.load_error = str(e)
             try:
                 store.quarantine(session_id)
@@ -348,13 +359,22 @@ current_session_id = init_user_session()
 manager = get_manager(current_session_id)
 
 if st.session_state.get("persist_blocked"):
-    st.sidebar.warning(
-        "Your saved session could not be read, so changes are not being saved and your "
-        f"previous data was kept aside. ({st.session_state.get('load_error', 'unknown error')})"
-    )
-    if st.sidebar.button("Start fresh and overwrite", key="btn_unblock_persist"):
-        st.session_state.persist_blocked = False
-        st.rerun()
+    if st.session_state.get("load_retryable"):
+        st.sidebar.warning(
+            "Saved sessions could not be reached right now. Your data is safe and nothing "
+            f"will be saved until it loads. ({st.session_state.get('load_error', 'unknown error')})"
+        )
+        if st.sidebar.button("Retry loading my session", key="btn_retry_load"):
+            del st.session_state["session_manager"]
+            st.rerun()
+    else:
+        st.sidebar.warning(
+            "Your saved session could not be read, so changes are not being saved and your "
+            f"previous data was kept aside. ({st.session_state.get('load_error', 'unknown error')})"
+        )
+        if st.sidebar.button("Start fresh and overwrite", key="btn_unblock_persist"):
+            st.session_state.persist_blocked = False
+            st.rerun()
 
 # Sidebar: Controls & Selected Courses List
 st.sidebar.title("Course Planner")

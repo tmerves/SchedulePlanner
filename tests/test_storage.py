@@ -261,11 +261,64 @@ def test_failed_remote_keeps_local_cache_and_load_falls_back(gh, clock, tmp_path
     assert loaded["semesters"]["0009"]["excluded_section_ids"] == ["s7"]
 
 
-def test_load_404_returns_none_and_clears_stale_local_copy(gh, clock, tmp_path):
+def test_load_404_without_local_copy_is_a_new_session(gh, clock, tmp_path):
     store = make_store(gh, clock, tmp_path)
-    store.local.save("abcdef123456", sample_state())
     assert store.load("abcdef123456") is None
-    assert store.local.load("abcdef123456") is None
+
+
+def test_load_404_keeps_and_requeues_unsynced_local_copy(gh, clock, tmp_path):
+    store = make_store(gh, clock, tmp_path)
+    store.local.save("abcdef123456", sample_state(4))
+    loaded = store.load("abcdef123456")
+    assert loaded["semesters"]["0009"]["excluded_section_ids"] == ["s4"]
+    assert store.local.load("abcdef123456") is not None  # not deleted
+    assert store.flush_due() == 1
+    assert "abcdef123456" in gh.files  # remote caught up
+
+
+def test_unreachable_remote_without_local_copy_is_not_a_new_session(gh, clock, tmp_path):
+    from core.storage import SessionUnavailable
+    gh.fail_mode = "500"
+    store = make_store(gh, clock, tmp_path)
+    with pytest.raises(SessionUnavailable):
+        store.load("abcdef123456")
+
+
+def test_open_breaker_without_local_copy_raises_unavailable(gh, clock, tmp_path):
+    from core.storage import SessionUnavailable
+    gh.fail_mode = "429"
+    store = make_store(gh, clock, tmp_path)
+    with pytest.raises(SessionUnavailable):
+        store.load("abcdef123456")
+    with pytest.raises(SessionUnavailable):  # breaker now open, no new request
+        n = len(gh.requests)
+        try:
+            store.load("abcdef123456")
+        finally:
+            assert len(gh.requests) == n
+
+
+def test_transient_error_on_raw_fetch_falls_back_not_corrupt(gh, clock, tmp_path):
+    """A timeout on the second request must not be reported as a corrupt session."""
+    store = make_store(gh, clock, tmp_path)
+    big = sample_state(9)
+    store.local.save("abcdef123456", big)
+
+    def handler(request):
+        if request.headers.get("accept") == "application/vnd.github.raw+json":
+            raise httpx.ReadTimeout("slow", request=request)
+        return httpx.Response(200, json={"content": "", "encoding": "none", "sha": "s"})
+
+    store._client = httpx.Client(transport=httpx.MockTransport(handler))
+    assert store.load("abcdef123456")["semesters"]["0009"]["excluded_section_ids"] == ["s9"]
+
+
+def test_invalid_remote_json_raises_value_error(gh, clock, tmp_path):
+    store = make_store(gh, clock, tmp_path)
+    gh.files["abcdef123456"] = b"{not json"
+    gh.shas["abcdef123456"] = "sha1"
+    with pytest.raises(ValueError):
+        store.load("abcdef123456")
 
 
 def test_repo_size_is_cached_and_prune_dispatched_once_per_hour(gh, clock, tmp_path):

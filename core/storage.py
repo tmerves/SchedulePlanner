@@ -40,6 +40,10 @@ HTTP_TIMEOUT = 10.0
 PRUNE_WORKFLOW_FILE = "prune.yml"
 
 
+class SessionUnavailable(Exception):
+    """The session store could not be read and there is no local copy to fall back on."""
+
+
 def state_hash(state: Mapping[str, Any]) -> str:
     """Hash of a session state, ignoring last_active so a pure touch is not treated as a change."""
     body = {k: v for k, v in state.items() if k != "last_active"}
@@ -211,10 +215,22 @@ class GitHubStore:
         return 0.0
 
     # ------------------------------------------------------------------ read
+    def _local_or_unavailable(self, session_id: str) -> dict:
+        """Local cache when the remote cannot be read. Never reports a missing session as new."""
+        cached = self.local.load(session_id)
+        if cached is None:
+            raise SessionUnavailable("Session storage could not be reached and no local copy exists")
+        return cached
+
     def load(self, session_id: str) -> Optional[dict]:
+        """
+        Returns the saved state, or None only when the remote confirms the session does not exist.
+        If the remote cannot be read, returns the local cache or raises SessionUnavailable, so a
+        returning user is never mistaken for a new one. Invalid saved content raises ValueError.
+        """
         now = self._clock()
         if self._breaker_open(now):
-            return self.local.load(session_id)
+            return self._local_or_unavailable(session_id)
         try:
             response = self._client.get(
                 self._url(session_id), params={"ref": self.branch}, headers=self._headers
@@ -222,35 +238,49 @@ class GitHubStore:
         except httpx.HTTPError as exc:
             logger.warning("Session load failed (%s); using local cache", exc)
             self._record_failure(now)
-            return self.local.load(session_id)
+            return self._local_or_unavailable(session_id)
 
         if response.status_code == 404:
             self._record_success()
-            self.local.delete(session_id)
-            return None
+            cached = self.local.load(session_id)
+            if cached is None:
+                return None
+            # Remote never received this session (failed or paused writes): keep the local copy
+            # and queue it so the remote catches up.
+            self.save(session_id, cached, force=True)
+            return cached
         retry_after = self._retry_after(response)
         if retry_after is not None:
             self._record_failure(now, retry_after)
-            return self.local.load(session_id)
+            return self._local_or_unavailable(session_id)
         if response.status_code != 200:
             self._record_failure(now)
-            return self.local.load(session_id)
+            return self._local_or_unavailable(session_id)
+
+        try:
+            payload = response.json()
+            raw = payload.get("content") or ""
+            if payload.get("encoding") == "base64" and raw:
+                text = base64.b64decode(raw).decode("utf-8")
+            else:
+                # Files over 1 MB come back without inline content; fetch the raw body instead
+                raw_response = self._client.get(
+                    self._url(session_id),
+                    params={"ref": self.branch},
+                    headers={**self._headers, "Accept": "application/vnd.github.raw+json"},
+                )
+                raw_response.raise_for_status()
+                text = raw_response.text
+        except (httpx.HTTPError, ValueError) as exc:
+            logger.warning("Session load incomplete (%s); using local cache", exc)
+            self._record_failure(now)
+            return self._local_or_unavailable(session_id)
 
         self._record_success()
-        payload = response.json()
-        raw = payload.get("content") or ""
-        if payload.get("encoding") == "base64" and raw:
-            text = base64.b64decode(raw).decode("utf-8")
-        else:
-            # Files over 1 MB come back without inline content; fetch the raw body instead
-            raw_response = self._client.get(
-                self._url(session_id),
-                params={"ref": self.branch},
-                headers={**self._headers, "Accept": "application/vnd.github.raw+json"},
-            )
-            raw_response.raise_for_status()
-            text = raw_response.text
-        state = json.loads(text)
+        try:
+            state = json.loads(text)
+        except ValueError as exc:
+            raise ValueError(f"Saved session is not valid JSON: {exc}") from exc
         self._sha[session_id] = payload.get("sha", "")
         self._synced_hash[session_id] = state_hash(state)
         try:
