@@ -3,6 +3,7 @@ from datetime import datetime, timedelta, timezone
 
 from tools.prune_sessions import (
     EMERGENCY_DELETE_COUNT,
+    marker_allows_size_deletion,
     main,
     parse_timestamp,
     plan_deletions,
@@ -116,3 +117,46 @@ def test_cli_writes_deleted_count_for_the_workflow(tmp_path, monkeypatch):
 
 def test_cli_missing_directory_is_not_an_error(tmp_path):
     assert main(["--sessions-dir", str(tmp_path / "nope")]) == 0
+
+
+def test_size_driven_deletion_is_skipped_while_size_reading_settles():
+    sessions = {f"s{i}": ago(hours=i + 1) for i in range(20)}
+    expired, emergency = plan_deletions(sessions, NOW, "emergency", size_mb=500, size_driven_allowed=False)
+    assert (expired, emergency) == ([], [])
+
+
+def test_expiry_still_runs_while_settling():
+    sessions = {"old": ago(days=9), "new": ago(hours=1)}
+    expired, emergency = plan_deletions(sessions, NOW, "emergency", size_mb=500, size_driven_allowed=False)
+    assert expired == ["old"] and emergency == []
+
+
+def test_marker_blocks_size_deletion_for_24_hours(tmp_path):
+    marker = tmp_path / ".last_prune"
+    assert marker_allows_size_deletion(None, NOW)
+    assert marker_allows_size_deletion(marker, NOW)  # no file yet
+    marker.write_text(ago(hours=23).isoformat())
+    assert not marker_allows_size_deletion(marker, NOW)
+    marker.write_text(ago(hours=25).isoformat())
+    assert marker_allows_size_deletion(marker, NOW)
+    marker.write_text("garbage")
+    assert marker_allows_size_deletion(marker, NOW)
+
+
+def test_stale_size_cannot_cascade_across_runs(tmp_path):
+    """After a cap-driven prune, repeated runs with the same stale size delete nothing more."""
+    sessions_dir = tmp_path / "sessions"
+    sessions_dir.mkdir()
+    for i in range(40):
+        write_session(sessions_dir, f"s{i:02d}", ago(hours=i + 1))
+    marker = tmp_path / ".last_prune"
+    args = ["--sessions-dir", str(sessions_dir), "--mode", "emergency", "--size-mb", "500",
+            "--marker", str(marker), "--now", NOW.isoformat()]
+    main(args)
+    assert len(list(sessions_dir.glob("*.json"))) == 25  # one batch of 15 removed
+    for hours_later in (6, 12, 18):  # stale size still 500, within 24 hours
+        later = (NOW + timedelta(hours=hours_later)).isoformat()
+        main(args[:-1] + [later])
+        assert len(list(sessions_dir.glob("*.json"))) == 25
+    main(args[:-1] + [(NOW + timedelta(hours=25)).isoformat()])  # settled: next batch allowed
+    assert len(list(sessions_dir.glob("*.json"))) == 10

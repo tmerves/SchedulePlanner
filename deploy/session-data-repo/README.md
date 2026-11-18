@@ -31,7 +31,7 @@ Without these secrets the app falls back to local disk storage, which is wiped o
 
 ## Retention rules
 - A session is deleted after 3 days without activity.
-- When the data repo reaches 200 MB, the 15 least recently active sessions are deleted. The app requests this when a new session is created, and the scheduled job also checks every 6 hours.
+- When the data repo reaches 200 MB, the 15 least recently active sessions are deleted. The app requests this when a new session is created, and the scheduled job also checks every 6 hours. GitHub's reported size lags a history squash, so after any deletion a marker file (`.last_prune`) blocks further size-driven deletion for 24 hours. Expiry-based deletion is never blocked.
 - History on the `sessions` branch is squashed after any deletion so the space is actually freed.
 
 Change `RETENTION_DAYS`, `SIZE_CAP_MB` or `EMERGENCY_DELETE_COUNT` at the top of `prune_sessions.py`, and `SIZE_CAP_MB` in `core/storage.py` to match.

@@ -57,7 +57,8 @@ jobs:
           python prune_sessions.py \
             --sessions-dir data/sessions \
             --mode "${{ inputs.mode || 'scheduled' }}" \
-            --size-mb "$((SIZE_KB / 1024))"
+            --size-mb "$((SIZE_KB / 1024))" \
+            --marker data/.last_prune
 
       # Deleting files does not shrink git history, so only when something was deleted
       # rewrite the data branch to a single commit. The lease makes the push fail instead of

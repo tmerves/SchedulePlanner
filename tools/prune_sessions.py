@@ -10,6 +10,9 @@ Rules
 - In emergency mode, or when the repo is at or over SIZE_CAP_MB, the EMERGENCY_DELETE_COUNT
   sessions with the oldest last_active are also deleted. If the repo is still over the cap,
   the next run removes another batch.
+- The reported repo size stays high for a while after a history squash. A marker file records the last
+  deletion, and size-driven deletion is skipped for SETTLE_HOURS afterwards so a stale reading cannot cascade
+  into deleting every session. Expiry-based deletion is never skipped.
 - Files that cannot be parsed or have no last_active are kept and reported, never deleted.
 
 Only the standard library is used so the job needs no installs.
@@ -25,6 +28,7 @@ from typing import Dict, List, Optional, Tuple
 RETENTION_DAYS = 3
 SIZE_CAP_MB = 200.0
 EMERGENCY_DELETE_COUNT = 15
+SETTLE_HOURS = 24  # GitHub's reported repo size lags a history squash, so wait before another size-driven batch
 
 
 def parse_timestamp(value) -> Optional[datetime]:
@@ -47,6 +51,7 @@ def plan_deletions(
     retention_days: int = RETENTION_DAYS,
     size_cap_mb: float = SIZE_CAP_MB,
     emergency_count: int = EMERGENCY_DELETE_COUNT,
+    size_driven_allowed: bool = True,
 ) -> Tuple[List[str], List[str]]:
     """Returns (expired_ids, emergency_ids). The two lists never overlap."""
     cutoff = now - timedelta(days=retention_days)
@@ -54,12 +59,22 @@ def plan_deletions(
 
     emergency: List[str] = []
     over_cap = size_mb is not None and size_mb >= size_cap_mb
-    if mode == "emergency" or over_cap:
+    if size_driven_allowed and (mode == "emergency" or over_cap):
         remaining = sorted(
             ((ts, sid) for sid, ts in last_active.items() if sid not in set(expired))
         )
         emergency = [sid for _, sid in remaining[:emergency_count]]
     return expired, emergency
+
+
+def marker_allows_size_deletion(marker: Optional[Path], now: datetime, settle_hours: float = SETTLE_HOURS) -> bool:
+    """False while the last deletion (recorded in the marker file) is newer than settle_hours."""
+    if marker is None or not marker.exists():
+        return True
+    last = parse_timestamp(marker.read_text(encoding="utf-8").strip())
+    if last is None:
+        return True
+    return now - last >= timedelta(hours=settle_hours)
 
 
 def load_last_active(sessions_dir: Path) -> Tuple[Dict[str, datetime], List[str]]:
@@ -85,6 +100,7 @@ def main(argv: Optional[List[str]] = None) -> int:
     parser.add_argument("--mode", choices=["scheduled", "emergency"], default="scheduled")
     parser.add_argument("--size-mb", type=float, default=None, help="Current repo size in MB")
     parser.add_argument("--now", default=None, help="ISO timestamp to use instead of the current time (testing)")
+    parser.add_argument("--marker", default=None, help="File recording the last deletion time (committed with the data)")
     parser.add_argument("--dry-run", action="store_true")
     args = parser.parse_args(argv)
 
@@ -98,14 +114,22 @@ def main(argv: Optional[List[str]] = None) -> int:
         return 0
 
     last_active, skipped = load_last_active(sessions_dir)
-    expired, emergency = plan_deletions(last_active, now, args.mode, args.size_mb)
+    marker = Path(args.marker) if args.marker else None
+    size_allowed = marker_allows_size_deletion(marker, now)
+    expired, emergency = plan_deletions(
+        last_active, now, args.mode, args.size_mb, size_driven_allowed=size_allowed
+    )
     to_delete = expired + emergency
 
     if not args.dry_run:
         for sid in to_delete:
             (sessions_dir / f"{sid}.json").unlink(missing_ok=True)
 
+    if to_delete and marker is not None and not args.dry_run:
+        marker.write_text(now.isoformat(), encoding="utf-8")
+
     summary = {
+        "size_deletion_skipped_settling": not size_allowed,
         "kept": len(last_active) - len(to_delete),
         "expired_deleted": expired,
         "emergency_deleted": emergency,
