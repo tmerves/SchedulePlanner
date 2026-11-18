@@ -395,3 +395,25 @@ def test_revert_during_inflight_write_is_not_dropped(gh, clock, tmp_path):
     assert store.flush_due() == 1  # Y is written afterwards
     final = json.loads(gh.files["abcdef123456"])
     assert final["semesters"]["0009"]["excluded_section_ids"] == ["s1"]
+
+
+def test_concurrent_local_saves_to_one_session_do_not_collide(tmp_path):
+    import threading
+    store = LocalFileStore(str(tmp_path))
+    errors = []
+
+    def worker(n):
+        try:
+            for i in range(40):
+                store.save("abcdef123456", sample_state(n * 100 + i))
+        except Exception as exc:  # noqa: BLE001
+            errors.append(exc)
+
+    threads = [threading.Thread(target=worker, args=(n,)) for n in range(6)]
+    for th in threads:
+        th.start()
+    for th in threads:
+        th.join()
+    assert errors == []
+    assert store.load("abcdef123456") is not None  # valid JSON, not interleaved
+    assert not list((tmp_path / "abcdef123456").glob("*.tmp"))

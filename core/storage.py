@@ -86,7 +86,8 @@ class LocalFileStore:
     def save(self, session_id: str, state: dict, force: bool = False) -> None:
         path = self._path(session_id)
         path.parent.mkdir(parents=True, exist_ok=True)
-        tmp = path.with_suffix(".tmp")
+        # Unique per process and thread so two tabs saving the same session cannot collide
+        tmp = path.with_name(f"{path.name}.{os.getpid()}.{threading.get_ident()}.tmp")
         with open(tmp, "w", encoding="utf-8") as f:
             json.dump(state, f, separators=(",", ":"), ensure_ascii=False)
         os.replace(tmp, path)
